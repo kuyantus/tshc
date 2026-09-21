@@ -1,0 +1,34 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - contextcheck
+    - errcheck
+    - errorlint
+    - forcetypeassert
+    - gocritic
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - modernize
+    - nolintlint
+    - perfsprint
+    - revive
+    - staticcheck
+    - unparam
+    - unused
+  settings:
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

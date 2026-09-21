@@ -1,0 +1,17 @@
+keepass_db: /Users/you/passwords.kdbx
+keepass_password:
+  source: keychain
+login_timeout: 5m
+
+teleports:
+  - name: tport1
+    proxy: tport1.example.com
+    keepass_entry: group/tport1
+    totp_source: keepass
+    tsh_args:
+      - --ttl=480
+
+  - name: tport2
+    proxy: tport2.example.com
+    keepass_entry: group/tport2
+    totp_source: prompt

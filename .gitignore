@@ -1,0 +1,9 @@
+/tshc
+/dist/
+/coverage.out
+
+/.agents/
+/skills-lock.json
+
+.vscode/
+.DS_Store
