@@ -61,11 +61,7 @@ func (a application) run(ctx context.Context) error {
 		return err
 	}
 
-	fzfPath, err := resolveExecutable("fzf", cfg.FZFPath)
-	if err != nil {
-		return err
-	}
-	selected, err := selectTeleport(ctx, fzfPath, cfg.Teleports)
+	selected, err := selectTeleport(ctx, a.input, a.errorOutput, cfg.FZFPath, cfg.Teleports)
 	if err != nil {
 		if errors.Is(err, errSelectionCanceled) {
 			return nil

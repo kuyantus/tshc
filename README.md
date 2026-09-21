@@ -13,7 +13,7 @@
 - Supports TOTP codes generated from KeePass or entered manually, for example from a phone
 - Stores the KeePass master password in the macOS Login Keychain for unattended startup
 - Falls back to secure terminal input when Keychain is unavailable
-- Uses `fzf` for interactive cluster selection
+- Uses `fzf` for fuzzy cluster selection when available and a built-in numbered selector otherwise
 - Passes configured arguments to `tsh login`
 - Signs in to all selected clusters sequentially to avoid races over the shared `tsh` profile
 
@@ -22,15 +22,15 @@
 - Go 1.26 or later when installing or building from source
 - [Teleport CLI](https://goteleport.com/docs/connect-your-client/tsh/)
 - A KeePass database containing the Teleport credentials
-- `fzf` for interactive selection
+- `fzf` is optional and enables fuzzy search
 
-Install `fzf` on macOS:
+Optionally install `fzf` on macOS for fuzzy search:
 
 ```bash
 brew install fzf
 ```
 
-Install `fzf` on Ubuntu or Debian:
+Optionally install `fzf` on Ubuntu or Debian:
 
 ```bash
 sudo apt install fzf
@@ -120,6 +120,8 @@ When manual TOTP is enabled, `tshc` shows the current cluster name and address b
 - `tsh_path` and `fzf_path` are optional absolute executable paths. Absolute paths are preferable for a credential-forwarding tool because they avoid substitution through `PATH`.
 
 When an executable is resolved, it must belong to root or the current user and must not be writable by the group or everyone. Each parent directory must also belong to root or the current user and must not be world-writable. Group-writable directories owned by the current user are allowed to support standard Homebrew layouts.
+
+When `fzf_path` is not configured, `tshc` uses `fzf` from `PATH` if it is available and falls back to a built-in numbered selector otherwise. An explicitly configured `fzf_path` must exist and pass the executable security checks; configuration and permission errors are never silently ignored.
 
 Selecting `[ALL]` signs in to the configured clusters sequentially.
 
