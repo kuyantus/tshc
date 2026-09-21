@@ -3,195 +3,169 @@
 [![CI](https://github.com/kuyantus/tshc/actions/workflows/ci.yml/badge.svg)](https://github.com/kuyantus/tshc/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**tshc** — CLI-утилита для входа в несколько Teleport-кластеров с учётными данными из KeePassXC.
+`tshc` is an interactive CLI for signing in to one or more Teleport clusters with credentials stored in a KeePass database. It can generate TOTP codes from KeePass or wait for a code entered from another device.
 
-Особенности:
+![tshc interface](tshc.png)
 
-- Интеграция с KeePassXC
-- TOTP из KeePassXC или ручной ввод кода, например с телефона
-- macOS: пароль KeePass в системной связке ключей
-- Linux: ручной ввод пароля
-- fzf-интерфейс для выбора кластера
-- Подставляет `tsh_args` из YAML-конфига
-- Последовательный вход во все кластеры без гонок за общий профиль `tsh`
+## Features
 
----
+- Reads usernames, passwords, and TOTP settings from a KeePass (`.kdbx`) database
+- Supports TOTP codes generated from KeePass or entered manually, for example from a phone
+- Stores the KeePass master password in the macOS Login Keychain for unattended startup
+- Falls back to secure terminal input when Keychain is unavailable
+- Uses `fzf` for interactive cluster selection
+- Passes configured arguments to `tsh login`
+- Signs in to all selected clusters sequentially to avoid races over the shared `tsh` profile
 
-## Пререквизиты
+## Requirements
 
-1. **Go 1.26+** (для компиляции программы)
-2. **Teleport CLI (`tsh`)**
-3. **KeePassXC 2.7+**
-   - Файл базы `.kdbx` с TOTP
-4. **fzf** — для интерактивного выбора кластера
+- Go 1.26 or later when installing or building from source
+- [Teleport CLI](https://goteleport.com/docs/connect-your-client/tsh/)
+- A KeePass database containing the Teleport credentials
+- `fzf` for interactive selection
 
----
-
-## Установка зависимостей
-
-### Для macOS:
+Install `fzf` on macOS:
 
 ```bash
 brew install fzf
 ```
 
-### Для Linux (Ubuntu/Debian):
+Install `fzf` on Ubuntu or Debian:
 
 ```bash
 sudo apt install fzf
 ```
 
-### Установка из исходников
+## Installation
+
+Install the latest version with Go:
 
 ```bash
 go install github.com/kuyantus/tshc@latest
 ```
 
-Или сборка клонированного репозитория:
+Or build a cloned repository:
 
 ```bash
 go build -o tshc
 ```
 
-Проект не использует CGO, поэтому macOS- и Linux-бинарники можно
-кросс-компилировать с `CGO_ENABLED=0`.
+The project does not use CGO, so macOS and Linux binaries can be cross-compiled with `CGO_ENABLED=0`.
 
-## Конфигурация teleports.yaml
+## Quick start
 
-Пример:
-```yaml
-keepass_db: /Users/you/passwords.kdbx
-keepass_password:
-  source: keychain
-login_timeout: 5m
-# Необязательно: абсолютные пути исключают подмену через PATH.
-# tsh_path: /opt/homebrew/bin/tsh
-# fzf_path: /opt/homebrew/bin/fzf
+Run `tshc` once:
 
-teleports:
-  - name: tport1
-    proxy: tport1.example.com
-    keepass_entry: group/tport1
-    totp_source: keepass
-    tsh_args:
-      - --ttl=480
-
-  - name: tport2
-    proxy: tport2.example.com
-    keepass_entry: group/tport2
-    totp_source: prompt
+```bash
+tshc
 ```
 
-Если записи в keepass лежат в корневой группе/директории, то неважно, как она называется, прописывать просто `keepass_entry: имя_записи_секрета`.
+On first run, `tshc` creates the private directory `~/.tshc` and writes an embedded configuration template to `~/.tshc/teleports.yaml`. Edit that file with the path to your KeePass database and your Teleport clusters, then run `tshc` again. The existing configuration is never overwritten, and no template file is required next to the binary.
 
-`name` — локальное имя кластера
-
-`proxy` — адрес Teleport прокси
-
-`keepass_entry` — путь в KeePassXC (группа/запись)
-
-`keepass_password.source` — источник мастер-пароля KeePass:
-
-- `keychain` — обычная запись в macOS Login Keychain, читаемая через системный
-  `/usr/bin/security`; значение по умолчанию. На других ОС или при недоступном
-  Keychain программа безопасно переходит к ручному вводу.
-- `prompt` — всегда запрашивать пароль в терминале без echo.
-
-Старое значение `legacy_keychain` принимается для совместимости и
-автоматически интерпретируется как `keychain`.
-
-`totp_source` — источник одноразового кода:
-
-- `keepass` — сгенерировать код из поля `otp` записи KeePassXC. Это значение по умолчанию, поэтому старые конфиги продолжат работать.
-- `prompt` — дождаться запроса MFA от `tsh` и попросить ввести код вручную. Подходит, если TOTP хранится на телефоне.
-
-`tsh_args` — дополнительные аргументы для `tsh login`. В примере `--ttl=480`
-задаёт восьмичасовой срок действия сессии и просто демонстрирует передачу аргументов.
-
-`login_timeout` — максимальное время одного входа. По умолчанию — `5m`.
-Значение должно быть больше нуля. Timeout относится к одному кластеру и при
-выборе `[ALL]` не мешает утилите попробовать остальные кластеры.
-
-`tsh_path` и `fzf_path` — необязательные абсолютные пути к бинарникам. Для
-credential-forwarding утилиты это предпочтительнее поиска через `PATH`. Если
-поля не заданы, `tshc` использует `PATH`. Бинарник должен принадлежать root или
-текущему пользователю и не может быть доступен для записи группе или всем.
-Каждый родительский каталог также должен принадлежать root или текущему
-пользователю и не может быть доступен для записи всем. Принадлежащие текущему
-пользователю каталоги с групповой записью разрешены: это поддерживает штатную
-структуру Homebrew, где `Cellar` обычно имеет такой режим доступа.
-
-При выборе `[ALL]` вход выполняется последовательно. Для записей с
-`totp_source: prompt` утилита перед каждым вводом показывает имя и адрес
-текущего кластера. Технические приглашения `tsh` для пароля и TOTP скрываются:
-при ручном TOTP остаётся только одно понятное приглашение от `tshc`, а
-предупреждения, ошибки и результат входа `tsh` продолжают выводиться.
-
-## Пароль KeePass в macOS Keychain
-
-Существующая запись старых версий с service `teleport-login` и account
-`keepass` продолжит работать без изменений. Создать или обновить её можно
-командой:
+On macOS, store the KeePass master password in Login Keychain to start `tshc` without entering it each time:
 
 ```bash
 tshc keychain set
 ```
 
-`tshc` запускает `/usr/bin/security add-generic-password` напрямую, без shell.
-Системная утилита сама запросит пароль в терминале. Пароль не передаётся в
-аргументах процесса, переменных окружения или командной строке shell. Удалить
-запись можно командой:
+On Linux, or when `keepass_password.source` is set to `prompt`, `tshc` securely asks for the master password in the terminal without echoing it.
+
+## Configuration
+
+Example `~/.tshc/teleports.yaml`:
+
+```yaml
+keepass_db: /Users/you/passwords.kdbx
+keepass_password:
+  source: keychain
+login_timeout: 5m
+
+# Optional absolute paths protect against PATH-based executable substitution.
+# tsh_path: /opt/homebrew/bin/tsh
+# fzf_path: /opt/homebrew/bin/fzf
+
+teleports:
+  - name: production
+    proxy: teleport.example.com
+    keepass_entry: teleport/production
+    totp_source: keepass
+    tsh_args:
+      - --ttl=480
+
+  - name: staging
+    proxy: staging.teleport.example.com
+    keepass_entry: teleport/staging
+    totp_source: prompt
+```
+
+### KeePass settings
+
+- `keepass_db` is the path to the KeePass database.
+- `keepass_entry` is the path to an entry in the form `group/entry`. Use only the entry name when it is stored in the root group.
+- `keepass_password.source` controls how the database master password is obtained. `keychain` is the default: on macOS it reads a regular item from Login Keychain, and on other systems or when Keychain is unavailable it falls back to terminal input. `prompt` always asks in the terminal without echoing the password.
+
+### TOTP settings
+
+- `totp_source: keepass` generates a code from the KeePass entry's `otp` field and is the default.
+- `totp_source: prompt` waits for the MFA request from `tsh` and asks for a code in the terminal. Use it when the authenticator is on another device.
+
+When manual TOTP is enabled, `tshc` shows the current cluster name and address before asking for the code. It hides the low-level password and TOTP prompts from `tsh`, while preserving warnings, errors, and the final login result.
+
+### Teleport settings
+
+- `name` is the local display name of the cluster.
+- `proxy` is the Teleport proxy address.
+- `tsh_args` contains optional extra arguments for `tsh login`. In the example, `--ttl=480` requests an eight-hour session.
+- `login_timeout` is the maximum duration of a single login and defaults to `5m`. It must be greater than zero. When `[ALL]` is selected, a timeout for one cluster does not prevent attempts to sign in to the remaining clusters.
+- `tsh_path` and `fzf_path` are optional absolute executable paths. Absolute paths are preferable for a credential-forwarding tool because they avoid substitution through `PATH`.
+
+When an executable is resolved, it must belong to root or the current user and must not be writable by the group or everyone. Each parent directory must also belong to root or the current user and must not be world-writable. Group-writable directories owned by the current user are allowed to support standard Homebrew layouts.
+
+Selecting `[ALL]` signs in to the configured clusters sequentially.
+
+## macOS Keychain
+
+Store or update the KeePass master password:
+
+```bash
+tshc keychain set
+```
+
+Delete it:
 
 ```bash
 tshc keychain delete
 ```
 
-После чтения пароль существует в памяти `tshc` только до открытия KeePass,
-после чего его буфер очищается. Используется абсолютный путь
-`/usr/bin/security`, поэтому подмена команды через `PATH` невозможна. Размер
-прочитанного секрета ограничен.
+`tshc` invokes `/usr/bin/security add-generic-password` directly without a shell. The system utility asks for the password in the terminal, so the secret is not passed through process arguments, environment variables, or a shell command line. The stored item uses the service `teleport-login` and account `keepass`.
 
-Это сознательный компромисс ради полностью автоматического входа: Login
-Keychain шифрует данные на диске, но после входа пользователя в macOS запись
-может читаться без отдельного Touch ID-подтверждения. Не используйте опцию
-`security add-generic-password -A`: она разрешает доступ любому приложению.
-Включите FileVault, используйте пароль учётной записи macOS и блокируйте экран,
-когда отходите от компьютера.
+After reading the password, `tshc` keeps it in memory only until the KeePass database is opened and then clears its buffer. The absolute `/usr/bin/security` path prevents command substitution through `PATH`, and the amount of secret data read from the command is limited.
 
-## Запуск приложения
+Using Login Keychain is a deliberate convenience and security tradeoff: the password is encrypted at rest, but after the user signs in to macOS the item can be read without a separate Touch ID confirmation. Do not create the item with `security add-generic-password -A`, because that permits access by any application. Enable FileVault, protect the macOS account with a strong password, and lock the screen when leaving the computer.
+
+## Usage
+
+Start the interactive cluster selector:
 
 ```bash
-./tshc
+tshc
 ```
 
-Справка и версия:
+Show help or the version:
 
 ```bash
-./tshc --help
-./tshc --version
+tshc --help
+tshc --version
 ```
 
-Версию релизного бинарника можно встроить при сборке:
+Embed a version in a release binary:
 
 ```bash
 go build -trimpath -ldflags "-s -w -X main.version=v1.0.0" -o tshc
 ```
 
-При первом запуске программа создаёт приватную директорию `~/.tshc` и извлекает
-туда встроенный шаблон `teleports.yaml`. Отдельный файл рядом с бинарником не
-нужен. После этого изменения нужно вносить в `~/.tshc/teleports.yaml`:
-существующий конфиг программа не перезаписывает. Утилита выставляет права `0700`
-на директорию и `0600` на конфиг и отказывается работать с симлинками на их
-месте.
+The configuration directory is created with mode `0700` and the configuration file with mode `0600`. `tshc` refuses to use symbolic links in their place. Manual KeePass passwords and TOTP codes are read without echo and respond to Ctrl-C. On SIGINT the process exits with status 130; on SIGTERM it exits with status 143.
 
-Ручной пароль KeePass и ручной TOTP читаются без echo и реагируют на Ctrl-C.
-При SIGINT процесс завершается с кодом 130, при SIGTERM — с кодом 143.
+## License
 
-## Скриншоты интерфейса
-
-![tshc](tshc.png)
-
-## Лицензия
-
-[MIT](LICENSE) — код можно использовать, изменять и распространять, сохраняя
-текст лицензии и уведомление об авторских правах.
+[MIT](LICENSE) permits use, modification, and redistribution while retaining the license text and copyright notice.
