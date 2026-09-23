@@ -105,9 +105,9 @@ tshc keychain delete
 
 ## Executable validation
 
-For executables inside `/opt/homebrew/Cellar` or `/usr/local/Cellar` on macOS,
-`tshc` accepts `admin`-writable Homebrew parent directories. This trusts the
-Mac's administrators to manage that installation. Files and directories must
+On macOS, `tshc` accepts parent directories writable by the `admin` group,
+including Homebrew's `Cellar` and `/Applications`. This trusts the Mac's
+administrators to manage installed software. Files and directories must
 still be owned by you or root, executable files must not be group- or
 world-writable, and world-writable directories are rejected.
 
