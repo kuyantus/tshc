@@ -13,17 +13,27 @@ I built `tshc` because logging in to several Teleport clusters one by one got ol
 
 - `tsh` installed (in `PATH`, unless you set `tsh_path`)
 - A KeePass `.kdbx` database with a `UserName` and `Password` in each Teleport entry
-- Go 1.26 or newer if you install or build from source
+- Go 1.26 or newer if you use `go install` or build manually
 
 [`fzf`](https://github.com/junegunn/fzf) is optional. With it, you get a searchable cluster list. Without it, `tshc` shows a numbered list in the terminal.
 
 ## Install
 
+With Homebrew on macOS or Linux:
+
+```bash
+brew install kuyantus/tap/tshc
+```
+
+The Homebrew formula does not install Teleport: keep using the `tsh` version that works with your clusters. It does not install `fzf` either, since the built-in selector works without it. To update later, run `brew upgrade kuyantus/tap/tshc`.
+
+If you already have Go 1.26 or newer, you can also install with:
+
 ```bash
 go install github.com/kuyantus/tshc@latest
 ```
 
-Or, from a checkout of this repository:
+Or build from a checkout of this repository:
 
 ```bash
 go build -o tshc .
