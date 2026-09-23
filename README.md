@@ -51,7 +51,7 @@ teleports:
 
 Replace the database path, proxy address, and KeePass entry path with your own. `keepass_entry` is relative to the database's root group: use `group/entry`, or just `entry` if it is in the root group. The optional `tsh_args` list is passed to `tsh login`; `--ttl=480` requests 480 minutes (eight hours), subject to your Teleport cluster's limits.
 
-On macOS, run `tshc keychain set` to save the KeePass master password in your default Keychain. The system asks for the password in the terminal; `tshc` does not put it in the config or a command-line argument. If you prefer to enter it every time, set `keepass_password.source: prompt`. On Linux, and when Keychain is unavailable, `tshc` asks for it in the terminal.
+On macOS, save the KeePass master password in Keychain before your next run if you want to avoid entering it each time. See [Using Keychain](#using-keychain) below. On Linux, `tshc` asks for the password in the terminal.
 
 Now run `tshc` again and choose a cluster. Select `[ALL]` to log in to each configured cluster in turn.
 
@@ -71,11 +71,17 @@ tshc --help
 tshc --version
 ```
 
-## A note about Keychain
+## Using Keychain
 
-Keychain avoids typing the KeePass master password on every run, but this is not Touch ID protection. Depending on the item's access settings, macOS may allow it to be read while your account is unlocked without another confirmation. Use `source: prompt` if you want to enter the password each time. `tshc keychain delete` removes the saved item.
+With `keepass_password.source: keychain` on macOS, save your KeePass database's master password once:
 
-If you previously created this item with `security add-generic-password -A`, remove it and create it again with `tshc keychain set`: `-A` allows any application to access it without warning. Updating its password is not a substitute for reviewing its access settings.
+```bash
+tshc keychain set
+```
+
+Enter the KeePass master password when prompted in the terminal. This saves it in your default macOS Keychain, not in `teleports.yaml`. It does not save your Teleport passwords or TOTP codes. On later runs, `tshc` reads the saved password to unlock the KeePass database. If it cannot read the Keychain item, it asks for the password in the terminal instead.
+
+To stop using Keychain, set `keepass_password.source: prompt` in your config and remove the saved password with `tshc keychain delete`. macOS may allow access to a saved item while your Keychain is unlocked without asking you each time; use `prompt` if you prefer to enter the password on every run.
 
 ## License
 
