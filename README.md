@@ -76,6 +76,8 @@ Set `totp_source` on each cluster:
 
 You can also set `login_timeout` (default `5m`), or provide absolute `tsh_path` and `fzf_path` values if the executables are not in `PATH`. The generated [configuration template](teleports.yaml) shows the layout.
 
+For shared installations or executable permission errors, see [security notes](docs/security.md#executable-validation).
+
 For command help and the installed version:
 
 ```bash
@@ -102,22 +104,6 @@ To stop using Keychain, set `keepass_password.source: prompt` in your config and
 ```bash
 tshc keychain delete
 ```
-
-## Executable validation
-
-On macOS, `tshc` accepts parent directories writable by the `admin` group,
-including Homebrew's `Cellar` and `/Applications`. This trusts the Mac's
-administrators to manage installed software. Files and directories must
-still be owned by you or root, executable files must not be group- or
-world-writable, and world-writable directories are rejected.
-
-If an automatically discovered `fzf` fails validation, `tshc` explains why and
-uses the numbered selector. An invalid explicit `fzf_path` still produces an error.
-
-For a custom shared installation, the optional `trusted_executable_groups`
-list can name groups allowed to write executable parent directories. Enable
-it only for groups whose members you trust to replace those executables.
-Standard macOS Homebrew does not need this setting.
 
 ## License
 
