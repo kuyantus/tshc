@@ -1,6 +1,6 @@
 module github.com/kuyantus/tshc
 
-go 1.26.0
+go 1.26.8
 
 require (
 	github.com/creack/pty v1.1.24

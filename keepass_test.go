@@ -382,6 +382,59 @@ func TestFindEntry(t *testing.T) {
 	}
 }
 
+func TestFindEntryRejectsAmbiguousGroups(t *testing.T) {
+	t.Parallel()
+
+	wanted := keepassEntry("dummy-password")
+	for _, test := range []struct {
+		name   string
+		path   string
+		groups []gokeepasslib.Group
+	}{
+		{
+			name: "duplicate groups",
+			path: "Teleport/production",
+			groups: []gokeepasslib.Group{
+				{Name: "Teleport", Entries: []gokeepasslib.Entry{wanted}},
+				{Name: "Teleport", Entries: []gokeepasslib.Entry{wanted}},
+			},
+		},
+		{
+			name: "only one duplicate contains the entry",
+			path: "Teleport/production",
+			groups: []gokeepasslib.Group{
+				{Name: "Teleport", Entries: []gokeepasslib.Entry{wanted}},
+				{Name: "Teleport"},
+			},
+		},
+		{
+			name: "nested duplicate groups",
+			path: "Work/Teleport/production",
+			groups: []gokeepasslib.Group{{Name: "Work", Groups: []gokeepasslib.Group{
+				{Name: "Teleport", Entries: []gokeepasslib.Entry{wanted}},
+				{Name: "Teleport", Entries: []gokeepasslib.Entry{wanted}},
+			}}},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			database := gokeepasslib.NewDatabase()
+			database.Content.Root.Groups = []gokeepasslib.Group{{Name: "Root", Groups: test.groups}}
+			entry, err := findEntry(database, test.path)
+			if err == nil || !strings.Contains(err.Error(), "ambiguous KeePass group") {
+				t.Fatalf("findEntry() error = %v, want ambiguity error", err)
+			}
+			if entry != nil {
+				t.Fatal("findEntry() returned an entry from an ambiguous group")
+			}
+			if !strings.Contains(err.Error(), test.path) || strings.Contains(err.Error(), wanted.GetPassword()) {
+				t.Fatal("ambiguity error must identify the path without exposing its password")
+			}
+		})
+	}
+}
+
 func keepassEntry(password string) gokeepasslib.Entry {
 	entry := gokeepasslib.NewEntry()
 	entry.Values = append(entry.Values,

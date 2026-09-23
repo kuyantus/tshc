@@ -230,14 +230,15 @@ func TestResolveExecutableRejectsWritableParent(t *testing.T) {
 	}
 }
 
-func TestResolveExecutableAllowsOwnerGroupWritableParent(t *testing.T) {
+func TestResolveExecutableRejectsGroupWritableAncestor(t *testing.T) {
 	t.Parallel()
 
 	directory := filepath.Join(trustedTempDir(t), "homebrew-cellar")
-	if err := os.Mkdir(directory, 0o700); err != nil {
+	binDirectory := filepath.Join(directory, "package", "bin")
+	if err := os.MkdirAll(binDirectory, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(directory, "fzf")
+	path := filepath.Join(binDirectory, "fzf")
 	if err := os.WriteFile(path, []byte("fixture"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -248,16 +249,94 @@ func TestResolveExecutableAllowsOwnerGroupWritableParent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	resolved, err := resolveExecutable("fzf", path)
-	if err != nil {
-		t.Fatalf("resolveExecutable() error = %v, want user-owned group-writable parent accepted", err)
+	_, err := resolveExecutable("fzf", path)
+	if err == nil || !strings.Contains(err.Error(), "group- or world-writable") {
+		t.Fatalf("resolveExecutable() error = %v, want group-writable ancestor rejection", err)
 	}
-	want, err := filepath.EvalSymlinks(path)
-	if err != nil {
+}
+
+func TestApplicationRejectsReplaceableExecutableBeforeReadingSecrets(t *testing.T) {
+	home := trustedTempDir(t)
+	configDirectory := filepath.Join(home, configDirName)
+	binDirectory := filepath.Join(home, "shared-bin")
+	for _, directory := range []string{configDirectory, binDirectory} {
+		if err := os.Mkdir(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tshPath := filepath.Join(binDirectory, "tsh")
+	if err := writeTestExecutable(tshPath, "#!/bin/sh\nexit 90\n"); err != nil {
 		t.Fatal(err)
 	}
-	if resolved != want {
-		t.Errorf("resolveExecutable() = %q, want %q", resolved, want)
+	if err := os.Chmod(binDirectory, 0o775); err != nil { // #nosec G302 -- intentionally insecure fixture.
+		t.Fatal(err)
+	}
+	fzfPath := filepath.Join(home, "fzf")
+	if err := writeTestExecutable(fzfPath, "#!/bin/sh\nprintf '1\\tfixture\\n'\n"); err != nil {
+		t.Fatal(err)
+	}
+	configYAML := fmt.Sprintf(
+		"keepass_db: unused.kdbx\ntsh_path: %q\nfzf_path: %q\nteleports:\n"+
+			"  - name: fixture\n    proxy: fixture.invalid\n    keepass_entry: production\n",
+		tshPath,
+		fzfPath,
+	)
+	if err := os.WriteFile(filepath.Join(configDirectory, configFileName), []byte(configYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	app := application{
+		output:      io.Discard,
+		errorOutput: io.Discard,
+		readKeePassPassword: func(context.Context, keepassPasswordSource, secretInput, io.Writer) ([]byte, error) {
+			t.Fatal("requested secrets while the validated executable could still be replaced by another group member")
+			return nil, nil
+		},
+	}
+	if err := app.run(context.Background()); err == nil || !strings.Contains(err.Error(), "group- or world-writable") {
+		t.Fatalf("run() error = %v, want rejection before requesting secrets", err)
+	}
+}
+
+func TestPrepareLoginJobRejectsDuplicateKeePassEntries(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name      string
+		passwords []string
+	}{
+		{name: "original order", passwords: []string{"dummy-secret-for-cluster-a", "dummy-secret-for-cluster-b"}},
+		{name: "reversed order", passwords: []string{"dummy-secret-for-cluster-b", "dummy-secret-for-cluster-a"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			entries := []gokeepasslib.Entry{keepassEntry(test.passwords[0]), keepassEntry(test.passwords[1])}
+			path := filepath.Join(t.TempDir(), "duplicates.kdbx")
+			writeTestKeePassDatabase(t, path, "dummy-master", entries...)
+			database, err := openKeePass(path, []byte("dummy-master"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			job, err := prepareLoginJob(database, teleport{
+				Name:         "cluster-b",
+				Proxy:        "cluster-b.invalid",
+				KeePassEntry: "production",
+				TOTPSource:   totpSourcePrompt,
+			})
+			defer job.clear()
+			if err == nil || !strings.Contains(err.Error(), "ambiguous KeePass entry") {
+				t.Fatalf("prepareLoginJob() error = %v, want ambiguity error", err)
+			}
+			if len(job.password) != 0 || job.totp != nil {
+				t.Fatal("prepared credentials from an ambiguous KeePass path")
+			}
+			for _, password := range test.passwords {
+				if strings.Contains(err.Error(), password) {
+					t.Fatal("ambiguity error exposes a password")
+				}
+			}
+		})
 	}
 }
 

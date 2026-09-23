@@ -171,6 +171,8 @@ func runSecurityCommand(
 func newSecurityCommand(ctx context.Context, operation securityOperation) (*exec.Cmd, error) {
 	switch operation {
 	case securityOperationSet:
+		// Do not trust the shared security executable to read a new item silently.
+		// -U preserves existing trusted applications, including Always Allow.
 		// The security tool prompts because -w is the final argument. Supplying
 		// the password as an argument would expose it through the process list.
 		return exec.CommandContext(
@@ -180,6 +182,7 @@ func newSecurityCommand(ctx context.Context, operation securityOperation) (*exec
 			"-U",
 			"-s", keychainService,
 			"-a", keychainAccount,
+			"-T", "",
 			"-w",
 		), nil
 	case securityOperationDelete:

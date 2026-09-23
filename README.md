@@ -13,7 +13,7 @@ I built `tshc` because logging in to several Teleport clusters one by one got ol
 
 - `tsh` installed (in `PATH`, unless you set `tsh_path`)
 - A KeePass `.kdbx` database with a `UserName` and `Password` in each Teleport entry
-- Go 1.26 or newer if you use `go install` or build manually
+- Go 1.26.8 or newer if you use `go install` or build manually
 
 [`fzf`](https://github.com/junegunn/fzf) is optional. With it, you get a searchable cluster list. Without it, `tshc` shows a numbered list in the terminal.
 
@@ -27,7 +27,7 @@ brew install kuyantus/tap/tshc
 
 The Homebrew formula does not install Teleport: keep using the `tsh` version that works with your clusters. It does not install `fzf` either, since the built-in selector works without it. To update later, run `brew upgrade kuyantus/tap/tshc`.
 
-If you already have Go 1.26 or newer, you can also install with:
+If you already have Go 1.26.8 or newer, you can also install with:
 
 ```bash
 go install github.com/kuyantus/tshc@latest
@@ -89,9 +89,17 @@ With `keepass_password.source: keychain` on macOS, save your KeePass database's 
 tshc keychain set
 ```
 
-Enter the KeePass master password when prompted in the terminal. This saves it in your default macOS Keychain, not in `teleports.yaml`. It does not save your Teleport passwords or TOTP codes. On later runs, `tshc` reads the saved password to unlock the KeePass database. If it cannot read the Keychain item, it asks for the password in the terminal instead.
+Enter the KeePass master password when prompted in the terminal. It is saved in your default macOS Keychain, not in `teleports.yaml`.
 
-To stop using Keychain, set `keepass_password.source: prompt` in your config and remove the saved password with `tshc keychain delete`. macOS may allow access to a saved item while your Keychain is unlocked without asking you each time; use `prompt` if you prefer to enter the password on every run.
+On the next run, macOS shows a Keychain access dialog for `security`, the system tool used by `tshc`. Choose **Allow / Allow Once** to confirm access on each run, or **Always Allow** for automatic access. macOS may also ask for your Keychain password, usually your Mac login password. Selecting `[ALL]` needs only one Keychain read for the whole batch.
+
+If `tshc` cannot read the saved password, it asks for the KeePass master password in the terminal instead.
+
+To stop using Keychain, set `keepass_password.source: prompt` in your config and remove the saved password:
+
+```bash
+tshc keychain delete
+```
 
 ## License
 

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -164,7 +165,10 @@ func parseKeychainPassword(output []byte) ([]byte, error) {
 
 func openKeePass(path string, password []byte) (_ *gokeepasslib.Database, returnErr error) {
 	database := gokeepasslib.NewDatabase()
-	database.Credentials = gokeepasslib.NewPasswordCredentials(string(password))
+	// DBCredentials expects the SHA-256 hash, as produced by
+	// NewPasswordCredentials. Hash bytes directly to avoid a master-password string.
+	passwordHash := sha256.Sum256(password)
+	database.Credentials = &gokeepasslib.DBCredentials{Passphrase: passwordHash[:]}
 	defer clearDatabaseCredentials(database)
 
 	file, err := os.Open(path) // #nosec G304 -- KeePass database path is explicitly supplied by the user config.
@@ -207,24 +211,33 @@ func findEntry(database *gokeepasslib.Database, path string) (*gokeepasslib.Entr
 	}
 	group := &database.Content.Root.Groups[0]
 	for _, name := range parts[:len(parts)-1] {
-		found := false
+		var next *gokeepasslib.Group
 		for i := range group.Groups {
 			if group.Groups[i].Name == name {
-				group = &group.Groups[i]
-				found = true
-				break
+				if next != nil {
+					return nil, fmt.Errorf("ambiguous KeePass group %q while resolving %q", name, path)
+				}
+				next = &group.Groups[i]
 			}
 		}
-		if !found {
+		if next == nil {
 			return nil, fmt.Errorf("KeePass group %q not found while resolving %q", name, path)
 		}
+		group = next
 	}
 
 	title := parts[len(parts)-1]
+	var entry *gokeepasslib.Entry
 	for i := range group.Entries {
 		if group.Entries[i].GetTitle() == title {
-			return &group.Entries[i], nil
+			if entry != nil {
+				return nil, fmt.Errorf("ambiguous KeePass entry %q", path)
+			}
+			entry = &group.Entries[i]
 		}
+	}
+	if entry != nil {
+		return entry, nil
 	}
 	return nil, fmt.Errorf("KeePass entry %q not found", path)
 }

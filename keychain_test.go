@@ -154,6 +154,7 @@ func TestNewSecurityCommandUsesFixedArguments(t *testing.T) {
 				"-U",
 				"-s", keychainService,
 				"-a", keychainAccount,
+				"-T", "",
 				"-w",
 			},
 		},

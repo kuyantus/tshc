@@ -264,9 +264,11 @@ func validateExecutableParents(name, path string) error {
 		if !info.IsDir() {
 			return fmt.Errorf("parent path %q for %s executable is not a directory", directory, name)
 		}
-		if info.Mode().Perm()&0o002 != 0 {
+		// Directory writers can replace a validated executable even when they
+		// cannot write to the executable itself.
+		if info.Mode().Perm()&0o022 != 0 {
 			return fmt.Errorf(
-				"refusing insecure %s executable %q: parent directory %q is world-writable",
+				"refusing insecure %s executable %q: parent directory %q is group- or world-writable",
 				name,
 				path,
 				directory,
