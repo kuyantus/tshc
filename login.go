@@ -63,7 +63,13 @@ func (r loginRunner) loginOne(ctx context.Context, job *loginJob) error {
 		close(closedOnCancel)
 	})
 
-	exchangeErr := exchangePrompts(ctx, terminal, r.terminalOutput, func(kind promptKind) ([]byte, error) {
+	terminalOutput := r.terminalOutput
+	var statusFilter *teleportStatusFilter
+	if r.compactStatus {
+		statusFilter = &teleportStatusFilter{output: terminalOutput}
+		terminalOutput = statusFilter
+	}
+	exchangeErr := exchangePrompts(ctx, terminal, terminalOutput, func(kind promptKind) ([]byte, error) {
 		switch kind {
 		case promptPassword:
 			return append([]byte(nil), job.password...), nil
@@ -73,6 +79,9 @@ func (r loginRunner) loginOne(ctx context.Context, job *loginJob) error {
 			return nil, fmt.Errorf("unsupported prompt kind %d", kind)
 		}
 	})
+	if statusFilter != nil {
+		exchangeErr = errors.Join(exchangeErr, statusFilter.flush())
+	}
 	if exchangeErr != nil {
 		cancel()
 	}
@@ -289,6 +298,95 @@ func writeTerminalOutput(output io.Writer, data []byte) error {
 		data = data[written:]
 	}
 	return nil
+}
+
+type teleportStatusFilter struct {
+	output    io.Writer
+	pending   []byte
+	inProfile bool
+}
+
+func (f *teleportStatusFilter) Write(data []byte) (int, error) {
+	length := len(data)
+	for len(data) > 0 {
+		lineEnd := bytes.IndexByte(data, '\n')
+		if lineEnd < 0 {
+			f.pending = append(f.pending, data...)
+			if len(f.pending) > promptBufferLimit {
+				if err := f.flushUnrecognized(); err != nil {
+					return 0, err
+				}
+			}
+			break
+		}
+		f.pending = append(f.pending, data[:lineEnd+1]...)
+		if len(f.pending) > promptBufferLimit {
+			if err := f.flushUnrecognized(); err != nil {
+				return 0, err
+			}
+		} else if err := f.writeLine(f.pending); err != nil {
+			return 0, err
+		}
+		f.pending = f.pending[:0]
+		data = data[lineEnd+1:]
+	}
+	return length, nil
+}
+
+func (f *teleportStatusFilter) flush() error {
+	if len(f.pending) == 0 {
+		return nil
+	}
+	if err := f.writeLine(f.pending); err != nil {
+		return err
+	}
+	f.pending = f.pending[:0]
+	return nil
+}
+
+func (f *teleportStatusFilter) flushUnrecognized() error {
+	// A long or unrecognized line is safer to show than to mistake for status.
+	f.inProfile = false
+	if err := writeTerminalOutput(f.output, f.pending); err != nil {
+		return err
+	}
+	f.pending = f.pending[:0]
+	return nil
+}
+
+func (f *teleportStatusFilter) writeLine(line []byte) error {
+	if bytes.HasPrefix(line, []byte("> Profile URL:")) || bytes.HasPrefix(line, []byte("  Profile URL:")) {
+		f.inProfile = true
+		return nil
+	}
+	if f.inProfile {
+		trimmed := bytes.TrimSpace(line)
+		if len(trimmed) == 0 {
+			f.inProfile = false
+			return nil
+		}
+		if bytes.HasPrefix(line, []byte("  ")) && isTeleportStatusField(trimmed) {
+			return nil
+		}
+		// Keep unknown fields and diagnostics visible if Teleport changes its output.
+		if !bytes.HasPrefix(line, []byte("  ")) {
+			f.inProfile = false
+		}
+	}
+	return writeTerminalOutput(f.output, line)
+}
+
+func isTeleportStatusField(line []byte) bool {
+	for _, field := range []string{
+		"Logged in as:", "Cluster:", "Roles:", "Traits:", "Logins:",
+		"Kubernetes:", "Kubernetes cluster:", "Kubernetes groups:", "Kubernetes users:",
+		"Valid until:", "Extensions:", "Active requests:", "Requests:",
+	} {
+		if bytes.HasPrefix(line, []byte(field)) {
+			return true
+		}
+	}
+	return false
 }
 
 func writeSecret(writer io.Writer, secret []byte) error {

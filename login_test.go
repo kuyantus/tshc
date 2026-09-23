@@ -226,6 +226,119 @@ printf 'Login successful\n'
 	}
 }
 
+func TestLoginJobsHidesRepeatedTeleportStatuses(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	tshPath := filepath.Join(directory, "tsh")
+	script := `#!/bin/sh
+printf 'Teleport client notice\n'
+printf '> Profile URL: https://first.example.com:443\n'
+printf '  Logged in as: alice\n'
+printf '  Cluster: first\n\n'
+printf 'WARNING: session expires soon\n'
+printf '  Profile URL: https://second.example.com:443\n'
+printf '  Logged in as: alice\n'
+printf '  Cluster: second\n\n'
+`
+	if err := writeTestExecutable(tshPath, script); err != nil {
+		t.Fatal(err)
+	}
+
+	jobs := []loginJob{
+		{name: "first", proxy: "first.example.com", username: "alice"},
+		{name: "second", proxy: "second.example.com", username: "alice"},
+	}
+	var terminalOutput bytes.Buffer
+	var statusOutput bytes.Buffer
+	runner := loginRunner{
+		terminalOutput: &terminalOutput,
+		statusOutput:   &statusOutput,
+		tshPath:        tshPath,
+		timeout:        10 * time.Second,
+	}
+	if err := runner.loginJobs(context.Background(), jobs, true); err != nil {
+		t.Fatalf("loginJobs() error = %v", err)
+	}
+	if got := terminalOutput.String(); strings.Contains(got, "Profile URL:") || strings.Contains(got, "Logged in as:") || strings.Contains(got, "Cluster:") {
+		t.Errorf("terminal output still includes repeated status: %q", got)
+	}
+	for _, message := range []string{"Teleport client notice", "WARNING: session expires soon"} {
+		if !strings.Contains(terminalOutput.String(), message) {
+			t.Errorf("terminal output = %q, want %q", terminalOutput.String(), message)
+		}
+	}
+	for _, message := range []string{"first (first.example.com): ok", "second (second.example.com): ok"} {
+		if !strings.Contains(statusOutput.String(), message) {
+			t.Errorf("status output = %q, want %q", statusOutput.String(), message)
+		}
+	}
+}
+
+func TestLoginJobsKeepsTeleportStatusForSingleSelection(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	tshPath := filepath.Join(directory, "tsh")
+	script := `#!/bin/sh
+printf '> Profile URL: https://only.example.com:443\n'
+printf '  Logged in as: alice\n'
+printf '  Cluster: only\n'
+`
+	if err := writeTestExecutable(tshPath, script); err != nil {
+		t.Fatal(err)
+	}
+
+	var terminalOutput bytes.Buffer
+	var statusOutput bytes.Buffer
+	runner := loginRunner{
+		terminalOutput: &terminalOutput,
+		statusOutput:   &statusOutput,
+		tshPath:        tshPath,
+		timeout:        10 * time.Second,
+	}
+	jobs := []loginJob{{name: "only", proxy: "only.example.com", username: "alice"}}
+	if err := runner.loginJobs(context.Background(), jobs, false); err != nil {
+		t.Fatalf("loginJobs() error = %v", err)
+	}
+	if got := terminalOutput.String(); !strings.Contains(got, "Profile URL: https://only.example.com:443") {
+		t.Errorf("terminal output = %q, want detailed status", got)
+	}
+	if got := statusOutput.String(); !strings.Contains(got, "Switched context to only.example.com") {
+		t.Errorf("status output = %q, want switched-context message", got)
+	}
+}
+
+func TestTeleportStatusFilterPreservesUnknownOutput(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	filter := teleportStatusFilter{output: &output}
+	for _, chunk := range []string{
+		"Client notice\r\n> Profile ",
+		"URL: https://old.example.com:443\r\n  Logged in as: alice\r\n",
+		"  New field: keep this\r\n  WARNING: check access\r\n",
+		"ERROR: access denied\r\n",
+		"\r\nAuthentication complete",
+	} {
+		if _, err := filter.Write([]byte(chunk)); err != nil {
+			t.Fatalf("Write(%q) error = %v", chunk, err)
+		}
+	}
+	if err := filter.flush(); err != nil {
+		t.Fatalf("flush() error = %v", err)
+	}
+	got := output.String()
+	for _, message := range []string{"Client notice", "New field: keep this", "WARNING: check access", "ERROR: access denied", "Authentication complete"} {
+		if !strings.Contains(got, message) {
+			t.Errorf("output = %q, want %q", got, message)
+		}
+	}
+	if strings.Contains(got, "Profile URL:") || strings.Contains(got, "Logged in as:") {
+		t.Errorf("output = %q, want recognized status hidden", got)
+	}
+}
+
 func TestLoginOneTimeoutKillsPTYProcessGroup(t *testing.T) {
 	t.Parallel()
 

@@ -166,12 +166,14 @@ type loginRunner struct {
 	input          secretInput
 	statusOutput   io.Writer
 	terminalOutput io.Writer
+	compactStatus  bool
 	tshPath        string
 	timeout        time.Duration
 	login          func(context.Context, *loginJob) error
 }
 
 func (r loginRunner) loginJobs(ctx context.Context, jobs []loginJob, loginAll bool) error {
+	r.compactStatus = loginAll
 	defer func() {
 		for i := range jobs {
 			jobs[i].clear()
