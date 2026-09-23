@@ -187,10 +187,10 @@ func loadConfig(path string) (_ config, returnErr error) {
 	return cfg, nil
 }
 
-func ensureConfig(home string, output io.Writer) (string, error) {
+func ensureConfig(home string, output io.Writer) (string, bool, error) {
 	configDir := filepath.Join(home, configDirName)
 	if err := ensurePrivateDir(configDir); err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	configPath := filepath.Join(configDir, configFileName)
@@ -199,25 +199,25 @@ func ensureConfig(home string, output io.Writer) (string, error) {
 	case err == nil:
 		file, openErr := openRegularNoFollow(configPath)
 		if openErr != nil {
-			return "", fmt.Errorf("open regular config %q without following symlinks: %w", configPath, openErr)
+			return "", false, fmt.Errorf("open regular config %q without following symlinks: %w", configPath, openErr)
 		}
 		chmodErr := file.Chmod(0o600)
 		closeErr := file.Close()
 		if err := errors.Join(chmodErr, closeErr); err != nil {
-			return "", fmt.Errorf("secure config %q: %w", configPath, err)
+			return "", false, fmt.Errorf("secure config %q: %w", configPath, err)
 		}
-		return configPath, nil
+		return configPath, false, nil
 	case !errors.Is(err, os.ErrNotExist):
-		return "", fmt.Errorf("inspect config %q: %w", configPath, err)
+		return "", false, fmt.Errorf("inspect config %q: %w", configPath, err)
 	}
 
 	if err := writeFileExclusive(configPath, defaultConfig); err != nil {
-		return "", fmt.Errorf("install initial config: %w", err)
+		return "", false, fmt.Errorf("install initial config: %w", err)
 	}
-	if _, err := fmt.Fprintln(output, "Copied config to", configPath); err != nil {
-		return "", fmt.Errorf("report copied config: %w", err)
+	if _, err := fmt.Fprintln(output, "Created", configPath, "— edit it and run tshc again."); err != nil {
+		return "", false, fmt.Errorf("report created config: %w", err)
 	}
-	return configPath, nil
+	return configPath, true, nil
 }
 
 func ensurePrivateDir(path string) error {

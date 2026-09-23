@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"sync"
 	"syscall"
 )
@@ -49,7 +50,7 @@ func runCLI(ctx context.Context, args []string, input *os.File, output, errorOut
 		return 2
 	}
 	if *showVersion {
-		if _, err := fmt.Fprintln(output, version); err != nil {
+		if _, err := fmt.Fprintln(output, reportedVersion()); err != nil {
 			return 1
 		}
 		return 0
@@ -64,6 +65,21 @@ func runCLI(ctx context.Context, args []string, input *os.File, output, errorOut
 	}
 
 	return 0
+}
+
+func reportedVersion() string {
+	info, _ := debug.ReadBuildInfo()
+	return versionForBuild(version, info)
+}
+
+func versionForBuild(stamped string, info *debug.BuildInfo) string {
+	if stamped != "" && stamped != "dev" {
+		return stamped
+	}
+	if info != nil && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		return info.Main.Version
+	}
+	return "dev"
 }
 
 type signalCause struct {

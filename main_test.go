@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"runtime/debug"
 	"syscall"
 	"testing"
 )
@@ -18,7 +19,7 @@ func TestRunCLIHelpAndVersion(t *testing.T) {
 		wantText string
 	}{
 		{name: "help", args: []string{"--help"}, wantCode: 0, wantText: "Usage: tshc"},
-		{name: "version", args: []string{"--version"}, wantCode: 0, wantText: version},
+		{name: "version", args: []string{"--version"}, wantCode: 0, wantText: reportedVersion()},
 		{name: "unknown flag", args: []string{"--unknown"}, wantCode: 2, wantText: "flag provided but not defined"},
 		{name: "positional argument", args: []string{"cluster"}, wantCode: 2, wantText: "unexpected arguments"},
 	} {
@@ -32,6 +33,53 @@ func TestRunCLIHelpAndVersion(t *testing.T) {
 			}
 			if combined := output.String() + errorOutput.String(); !bytes.Contains([]byte(combined), []byte(test.wantText)) {
 				t.Errorf("output = %q, want substring %q", combined, test.wantText)
+			}
+		})
+	}
+}
+
+func TestVersionForBuild(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name    string
+		stamped string
+		module  string
+		want    string
+	}{
+		{name: "release build", stamped: "v1.2.3", module: "v1.2.2", want: "v1.2.3"},
+		{name: "go install", stamped: "dev", module: "v1.2.3", want: "v1.2.3"},
+		{name: "local build", stamped: "dev", module: "(devel)", want: "dev"},
+		{name: "missing metadata", stamped: "dev", want: "dev"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			info := &debug.BuildInfo{Main: debug.Module{Version: test.module}}
+			if got := versionForBuild(test.stamped, info); got != test.want {
+				t.Errorf("versionForBuild(%q, %q) = %q, want %q", test.stamped, test.module, got, test.want)
+			}
+		})
+	}
+	if got := versionForBuild("", nil); got != "dev" {
+		t.Errorf("versionForBuild without metadata = %q, want dev", got)
+	}
+}
+
+func TestRunCLIKeychainSubcommandHelp(t *testing.T) {
+	t.Parallel()
+
+	for _, command := range []string{"set", "delete"} {
+		t.Run(command, func(t *testing.T) {
+			t.Parallel()
+			var output bytes.Buffer
+			var errorOutput bytes.Buffer
+			code := runCLI(context.Background(), []string{"keychain", command, "--help"}, nil, &output, &errorOutput)
+			if code != 0 {
+				t.Errorf("help exit code = %d, want 0", code)
+			}
+			if got := errorOutput.String(); !bytes.Contains([]byte(got), []byte("Usage: tshc keychain "+command)) ||
+				bytes.Contains([]byte(got), []byte("ERROR:")) {
+				t.Errorf("help output = %q", got)
 			}
 		})
 	}

@@ -52,9 +52,12 @@ func (a application) run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("get home directory: %w", err)
 	}
-	configPath, err := ensureConfig(home, a.errorOutput)
+	configPath, created, err := ensureConfig(home, a.errorOutput)
 	if err != nil {
 		return err
+	}
+	if created {
+		return nil
 	}
 	cfg, err := loadConfig(configPath)
 	if err != nil {

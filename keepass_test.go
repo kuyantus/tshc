@@ -195,6 +195,29 @@ func TestParseKeychainPassword(t *testing.T) {
 	}
 }
 
+func TestBoundedKeychainOutput(t *testing.T) {
+	t.Parallel()
+
+	var output boundedKeychainOutput
+	data := bytes.Repeat([]byte{'x'}, maxSecretLength)
+	if count, err := output.Write(data); count != len(data) || err != nil {
+		t.Fatalf("Write(password) = (%d, %v)", count, err)
+	}
+	if count, err := output.Write([]byte("\r\n")); count != 2 || err != nil {
+		t.Fatalf("Write(newline) = (%d, %v)", count, err)
+	}
+	if count, err := output.Write([]byte("extra")); count != 0 || !errors.Is(err, errKeychainOutputTooLarge) {
+		t.Fatalf("Write(extra) = (%d, %v), want size error", count, err)
+	}
+	if !output.exceeded {
+		t.Error("bounded output did not record overflow")
+	}
+	if len(output.data) != maxSecretLength+2 {
+		t.Errorf("buffer length = %d, want %d", len(output.data), maxSecretLength+2)
+	}
+	clear(output.data)
+}
+
 func TestKeePassPasswordSource(t *testing.T) {
 	t.Parallel()
 

@@ -114,14 +114,39 @@ func getPasswordFromKeychain(ctx context.Context) ([]byte, error) {
 		"-a", keychainAccount,
 		"-w",
 	)
-	output, err := command.Output()
+	var output boundedKeychainOutput
+	command.Stdout = &output
+	err := command.Run()
+	if output.exceeded {
+		clear(output.data)
+		return nil, fmt.Errorf("macOS Keychain password exceeds %d bytes", maxSecretLength)
+	}
 	if err != nil {
+		clear(output.data)
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, ctxErr
 		}
 		return nil, fmt.Errorf("read KeePass password from macOS Keychain: %w", err)
 	}
-	return parseKeychainPassword(output)
+	return parseKeychainPassword(output.data)
+}
+
+var errKeychainOutputTooLarge = errors.New("keychain output is too large")
+
+type boundedKeychainOutput struct {
+	data     []byte
+	exceeded bool
+}
+
+func (o *boundedKeychainOutput) Write(p []byte) (int, error) {
+	// Leave room for the trailing CRLF printed by the security command.
+	const maxOutputLength = maxSecretLength + 2
+	if len(p) > maxOutputLength-len(o.data) {
+		o.exceeded = true
+		return 0, errKeychainOutputTooLarge
+	}
+	o.data = append(o.data, p...)
+	return len(p), nil
 }
 
 func parseKeychainPassword(output []byte) ([]byte, error) {

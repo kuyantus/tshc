@@ -32,6 +32,7 @@ func (i terminalSecretInput) ReadSecret(ctx context.Context) (_ []byte, returnEr
 
 	secret := make([]byte, 0, 64)
 	buffer := make([]byte, 256)
+	defer clear(buffer)
 	for {
 		if err := waitForTerminalInput(ctx, int(i.file.Fd())); err != nil {
 			clear(secret)

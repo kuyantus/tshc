@@ -55,6 +55,9 @@ func runKeychainCLI(
 		runCommand:  runSecurityCommand,
 	}
 	if err := manager.run(ctx, args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0
+		}
 		if ctx.Err() != nil {
 			return signalExitCode(context.Cause(ctx))
 		}
@@ -93,6 +96,9 @@ func (m keychainManager) run(ctx context.Context, args []string) error {
 func parseNoArgs(command string, args []string, output io.Writer) error {
 	flags := flag.NewFlagSet(command, flag.ContinueOnError)
 	flags.SetOutput(output)
+	flags.Usage = func() {
+		_, _ = fmt.Fprintln(output, "Usage: tshc "+command)
+	}
 	if err := flags.Parse(args); err != nil {
 		return err
 	}

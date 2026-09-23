@@ -15,9 +15,12 @@ func TestEnsureConfigInstallsBundledConfig(t *testing.T) {
 	home := t.TempDir()
 
 	var output bytes.Buffer
-	configPath, err := ensureConfig(home, &output)
+	configPath, created, err := ensureConfig(home, &output)
 	if err != nil {
 		t.Fatalf("ensureConfig() error = %v", err)
+	}
+	if !created {
+		t.Fatal("ensureConfig() did not report a new configuration")
 	}
 	wantPath := filepath.Join(home, configDirName, configFileName)
 	if configPath != wantPath {
@@ -57,9 +60,12 @@ func TestEnsureConfigInstallsBundledConfig(t *testing.T) {
 	}
 
 	output.Reset()
-	secondPath, err := ensureConfig(home, &output)
+	secondPath, created, err := ensureConfig(home, &output)
 	if err != nil {
 		t.Fatalf("second ensureConfig() error = %v", err)
+	}
+	if created {
+		t.Fatal("second ensureConfig() reported an existing configuration as new")
 	}
 	if secondPath != configPath {
 		t.Errorf("second config path = %q, want %q", secondPath, configPath)

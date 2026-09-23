@@ -111,6 +111,31 @@ teleports:
 	}
 }
 
+func TestApplicationFirstRunStopsAfterCreatingConfig(t *testing.T) {
+	home := trustedTempDir(t)
+	t.Setenv("HOME", home)
+
+	var output bytes.Buffer
+	app := application{
+		output:      io.Discard,
+		errorOutput: &output,
+		readKeePassPassword: func(context.Context, keepassPasswordSource, secretInput, io.Writer) ([]byte, error) {
+			t.Fatal("first run attempted to read the KeePass password")
+			return nil, nil
+		},
+	}
+	if err := app.run(context.Background()); err != nil {
+		t.Fatalf("first run error = %v", err)
+	}
+	configPath := filepath.Join(home, configDirName, configFileName)
+	if _, err := os.Stat(configPath); err != nil {
+		t.Fatalf("created config: %v", err)
+	}
+	if got := output.String(); !strings.Contains(got, configPath) || !strings.Contains(got, "edit it") {
+		t.Errorf("first-run output = %q, want edit instruction", got)
+	}
+}
+
 func TestRunTreatsCanceledSelectionAsSuccess(t *testing.T) {
 	home := trustedTempDir(t)
 	configDirectory := filepath.Join(home, configDirName)

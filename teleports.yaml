@@ -1,4 +1,4 @@
-keepass_db: /Users/you/passwords.kdbx
+keepass_db: /path/to/passwords.kdbx
 keepass_password:
   source: keychain
 login_timeout: 5m
