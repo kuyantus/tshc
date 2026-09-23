@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/tobischo/gokeepasslib/v3"
@@ -64,7 +65,11 @@ func (a application) run(ctx context.Context) error {
 		return err
 	}
 
-	selected, err := selectTeleport(ctx, a.input, a.errorOutput, cfg.FZFPath, cfg.Teleports)
+	trustedGroupIDs, err := cfg.trustedExecutableGroupIDs()
+	if err != nil {
+		return err
+	}
+	selected, err := selectTeleport(ctx, a.input, a.errorOutput, cfg.FZFPath, cfg.Teleports, trustedGroupIDs...)
 	if err != nil {
 		if errors.Is(err, errSelectionCanceled) {
 			return nil
@@ -72,7 +77,7 @@ func (a application) run(ctx context.Context) error {
 		return err
 	}
 
-	tshPath, err := resolveExecutable("tsh", cfg.TSHPath)
+	tshPath, err := resolveExecutable("tsh", cfg.TSHPath, trustedGroupIDs...)
 	if err != nil {
 		return err
 	}
@@ -218,7 +223,7 @@ func (r loginRunner) loginJobs(ctx context.Context, jobs []loginJob, loginAll bo
 	return errors.Join(errs...)
 }
 
-func resolveExecutable(name, configuredPath string) (string, error) {
+func resolveExecutable(name, configuredPath string, trustedGroupIDs ...uint32) (string, error) {
 	path := configuredPath
 	if path == "" {
 		var err error
@@ -249,13 +254,13 @@ func resolveExecutable(name, configuredPath string) (string, error) {
 	if err := validateExecutableOwner(name, path, "file", info); err != nil {
 		return "", err
 	}
-	if err := validateExecutableParents(name, path); err != nil {
+	if err := validateExecutableParents(name, path, trustedGroupIDs); err != nil {
 		return "", err
 	}
 	return path, nil
 }
 
-func validateExecutableParents(name, path string) error {
+func validateExecutableParents(name, path string, trustedGroupIDs []uint32) error {
 	for directory := filepath.Dir(path); ; directory = filepath.Dir(directory) {
 		info, err := os.Stat(directory)
 		if err != nil {
@@ -265,8 +270,16 @@ func validateExecutableParents(name, path string) error {
 			return fmt.Errorf("parent path %q for %s executable is not a directory", directory, name)
 		}
 		// Directory writers can replace a validated executable even when they
-		// cannot write to the executable itself.
-		if info.Mode().Perm()&0o022 != 0 {
+		// cannot write to the executable itself. Trust groups only by explicit config.
+		untrustedGroupWritable := info.Mode().Perm()&0o020 != 0
+		if untrustedGroupWritable {
+			groupID, err := fileGroupID(info)
+			if err != nil {
+				return fmt.Errorf("inspect group of parent directory %q: %w", directory, err)
+			}
+			untrustedGroupWritable = !slices.Contains(trustedGroupIDs, groupID)
+		}
+		if info.Mode().Perm()&0o002 != 0 || untrustedGroupWritable {
 			return fmt.Errorf(
 				"refusing insecure %s executable %q: parent directory %q is group- or world-writable",
 				name,

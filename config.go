@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,12 +21,33 @@ const (
 )
 
 type config struct {
-	KeePassDB       string                `yaml:"keepass_db"`
-	KeePassPassword keepassPasswordConfig `yaml:"keepass_password,omitempty"`
-	LoginTimeout    *configDuration       `yaml:"login_timeout,omitempty"`
-	TSHPath         string                `yaml:"tsh_path,omitempty"`
-	FZFPath         string                `yaml:"fzf_path,omitempty"`
-	Teleports       []teleport            `yaml:"teleports"`
+	KeePassDB               string                `yaml:"keepass_db"`
+	KeePassPassword         keepassPasswordConfig `yaml:"keepass_password,omitempty"`
+	LoginTimeout            *configDuration       `yaml:"login_timeout,omitempty"`
+	TSHPath                 string                `yaml:"tsh_path,omitempty"`
+	FZFPath                 string                `yaml:"fzf_path,omitempty"`
+	TrustedExecutableGroups []string              `yaml:"trusted_executable_groups,omitempty"`
+	Teleports               []teleport            `yaml:"teleports"`
+}
+
+func (c config) trustedExecutableGroupIDs() ([]uint32, error) {
+	ids := make([]uint32, 0, len(c.TrustedExecutableGroups))
+	for _, name := range c.TrustedExecutableGroups {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return nil, errors.New("trusted_executable_groups must not contain an empty group name")
+		}
+		group, err := user.LookupGroup(name)
+		if err != nil {
+			return nil, fmt.Errorf("resolve trusted_executable_groups entry %q: %w", name, err)
+		}
+		id, err := strconv.ParseUint(group.Gid, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("parse ID for trusted executable group %q: %w", name, err)
+		}
+		ids = append(ids, uint32(id))
+	}
+	return ids, nil
 }
 
 type keepassPasswordConfig struct {

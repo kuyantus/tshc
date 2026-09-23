@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -295,6 +297,115 @@ func TestApplicationRejectsReplaceableExecutableBeforeReadingSecrets(t *testing.
 	}
 	if err := app.run(context.Background()); err == nil || !strings.Contains(err.Error(), "group- or world-writable") {
 		t.Fatalf("run() error = %v, want rejection before requesting secrets", err)
+	}
+}
+
+func TestResolveExecutableWithTrustedGroup(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name          string
+		directoryMode os.FileMode
+		fileMode      os.FileMode
+		trustGroup    bool
+		wantError     bool
+	}{
+		{name: "explicitly trusted group", directoryMode: 0o775, fileMode: 0o755, trustGroup: true},
+		{name: "group membership is not implicit trust", directoryMode: 0o775, fileMode: 0o755, wantError: true},
+		{name: "world write is never trusted", directoryMode: 0o777, fileMode: 0o755, trustGroup: true, wantError: true},
+		{name: "file group write is still rejected", directoryMode: 0o775, fileMode: 0o775, trustGroup: true, wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			directory := filepath.Join(trustedTempDir(t), "Cellar")
+			binDirectory := filepath.Join(directory, "fzf", "version", "bin")
+			if err := os.MkdirAll(binDirectory, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(binDirectory, "fzf")
+			if err := writeTestExecutable(path, "#!/bin/sh\nexit 0\n"); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(path, test.fileMode); err != nil { // #nosec G302 -- tests writable-file rejection.
+				t.Fatal(err)
+			}
+			if err := os.Chmod(directory, test.directoryMode); err != nil { // #nosec G302 -- tests directory trust boundaries.
+				t.Fatal(err)
+			}
+			info, err := os.Stat(directory)
+			if err != nil {
+				t.Fatal(err)
+			}
+			groupID, err := fileGroupID(info)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var trustedGroups []uint32
+			if test.trustGroup {
+				trustedGroups = []uint32{groupID}
+			}
+			resolved, err := resolveExecutable("fzf", path, trustedGroups...)
+			if (err != nil) != test.wantError {
+				t.Fatalf("resolveExecutable() error = %v, wantError = %v", err, test.wantError)
+			}
+			if err == nil && resolved != path {
+				t.Errorf("resolved path = %q, want %q", resolved, path)
+			}
+		})
+	}
+}
+
+func TestApplicationUsesConfiguredExecutableGroup(t *testing.T) {
+	home := trustedTempDir(t)
+	configDirectory := filepath.Join(home, configDirName)
+	binDirectory := filepath.Join(home, "Cellar", "bin")
+	for _, directory := range []string{configDirectory, binDirectory} {
+		if err := os.MkdirAll(directory, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Chmod(binDirectory, 0o775); err != nil { // #nosec G302 -- models explicit trust of a Homebrew group.
+		t.Fatal(err)
+	}
+	info, err := os.Stat(binDirectory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groupID, err := fileGroupID(info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := user.LookupGroupId(strconv.FormatUint(uint64(groupID), 10))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fzfPath := filepath.Join(binDirectory, "fzf")
+	tshPath := filepath.Join(binDirectory, "tsh")
+	if err := writeTestExecutable(fzfPath, "#!/bin/sh\nprintf '1\\tfixture\\n'\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeTestExecutable(tshPath, "#!/bin/sh\nexit 90\n"); err != nil {
+		t.Fatal(err)
+	}
+	configYAML := fmt.Sprintf(
+		"keepass_db: unused.kdbx\ntrusted_executable_groups: [%q]\ntsh_path: %q\nfzf_path: %q\nteleports:\n"+
+			"  - name: fixture\n    proxy: fixture.invalid\n    keepass_entry: production\n",
+		group.Name, tshPath, fzfPath,
+	)
+	if err := os.WriteFile(filepath.Join(configDirectory, configFileName), []byte(configYAML), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	stopBeforeSecrets := errors.New("stop after validating both executables")
+	app := application{
+		output:      io.Discard,
+		errorOutput: io.Discard,
+		readKeePassPassword: func(context.Context, keepassPasswordSource, secretInput, io.Writer) ([]byte, error) {
+			return nil, stopBeforeSecrets
+		},
+	}
+	if err := app.run(context.Background()); !errors.Is(err, stopBeforeSecrets) {
+		t.Fatalf("run() error = %v, want both executables accepted using the configured group", err)
 	}
 }
 

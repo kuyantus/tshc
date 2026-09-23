@@ -19,6 +19,14 @@ func fileOwnerUID(info os.FileInfo) (uint32, error) {
 	return stat.Uid, nil
 }
 
+func fileGroupID(info os.FileInfo) (uint32, error) {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, errors.New("file group information is unavailable")
+	}
+	return stat.Gid, nil
+}
+
 func effectiveUID() int {
 	return os.Geteuid()
 }

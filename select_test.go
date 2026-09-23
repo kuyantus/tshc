@@ -54,24 +54,56 @@ func TestSelectTeleportDoesNotFallbackForConfiguredFZF(t *testing.T) {
 	}
 }
 
-func TestSelectTeleportDoesNotFallbackForInsecureFZF(t *testing.T) {
-	binDirectory := trustedTempDir(t)
-	fzfPath := filepath.Join(binDirectory, "fzf")
-	if err := writeTestExecutable(fzfPath, "#!/bin/sh\nexit 0\n"); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(fzfPath, 0o720); err != nil { // #nosec G302 -- intentionally insecure fixture.
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", binDirectory)
+func TestSelectTeleportFallsBackForInsecureDiscoveredFZF(t *testing.T) {
+	for _, name := range []string{"writable file", "writable Homebrew ancestor"} {
+		t.Run(name, func(t *testing.T) {
+			root := trustedTempDir(t)
+			cellar := filepath.Join(root, "Cellar")
+			binDirectory := filepath.Join(cellar, "fzf", "version", "bin")
+			if err := os.MkdirAll(binDirectory, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			marker := filepath.Join(root, "fzf-was-executed")
+			fzfPath := filepath.Join(binDirectory, "fzf")
+			script := fmt.Sprintf("#!/bin/sh\nprintf ran > %q\nprintf '1\\tfixture\\n'\n", marker)
+			if err := writeTestExecutable(fzfPath, script); err != nil {
+				t.Fatal(err)
+			}
+			if name == "writable file" {
+				if err := os.Chmod(fzfPath, 0o720); err != nil { // #nosec G302 -- intentionally insecure fixture.
+					t.Fatal(err)
+				}
+			} else if err := os.Chmod(cellar, 0o775); err != nil { // #nosec G302 -- reproduces Homebrew permissions.
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", binDirectory)
 
-	var output bytes.Buffer
-	_, err := selectTeleport(context.Background(), nil, &output, "", []teleport{{Name: "test"}})
-	if err == nil || !strings.Contains(err.Error(), "file is group- or world-writable") {
-		t.Fatalf("selectTeleport() error = %v, want insecure executable error", err)
-	}
-	if output.Len() != 0 {
-		t.Errorf("output = %q, want no fallback output", output.String())
+			teleports := []teleport{{Name: "first"}, {Name: "second"}}
+			var output bytes.Buffer
+			got, err := selectTeleport(context.Background(), selectionInput(t, "2\n"), &output, "", teleports)
+			if err != nil {
+				t.Fatalf("selectTeleport() error = %v, want basic selector", err)
+			}
+			if got.all || got.index != 1 {
+				t.Errorf("selection = %+v, want second cluster", got)
+			}
+			if !strings.Contains(output.String(), "using basic selector") ||
+				!strings.Contains(output.String(), "group- or world-writable") {
+				t.Errorf("output = %q, want fallback reason", output.String())
+			}
+			if _, err := os.Stat(marker); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("rejected fzf was executed: marker stat error = %v", err)
+			}
+
+			output.Reset()
+			_, err = selectTeleport(context.Background(), nil, &output, fzfPath, teleports)
+			if err == nil || !strings.Contains(err.Error(), "group- or world-writable") {
+				t.Fatalf("explicit fzf error = %v, want unsafe configured path rejected", err)
+			}
+			if output.Len() != 0 {
+				t.Errorf("output = %q, want no fallback for explicitly configured fzf", output.String())
+			}
+		})
 	}
 }
 

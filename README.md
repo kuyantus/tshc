@@ -27,6 +27,21 @@ brew install kuyantus/tap/tshc
 
 The Homebrew formula does not install Teleport: keep using the `tsh` version that works with your clusters. It does not install `fzf` either, since the built-in selector works without it. To update later, run `brew upgrade kuyantus/tap/tshc`.
 
+On macOS, Homebrew directories may be writable by the `admin` group. To use
+`fzf` or `tsh` from those directories, add this top-level setting to
+`~/.tshc/teleports.yaml` **only if you trust every member of that group**:
+
+```yaml
+trusted_executable_groups: [admin]
+```
+
+This explicitly allows group write permission on parent directories owned by
+you or root. Executable files must still be owned by you or root and must not
+be writable by a group or others; directories writable by everyone remain
+rejected. No groups are trusted by default. If an automatically discovered
+`fzf` fails validation, `tshc` explains why and uses the numbered selector.
+An invalid explicit `fzf_path` still produces an error.
+
 If you already have Go 1.26.8 or newer, you can also install with:
 
 ```bash

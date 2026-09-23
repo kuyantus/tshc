@@ -27,6 +27,15 @@ updating those pins; Dependabot is configured to propose updates.
 
 1. Run the checks above on the release commit. Review the CI results for both
    supported operating systems and Go versions.
+   On a macOS machine with Homebrew `fzf` installed, also exercise the actual
+   selector with a synthetic cluster (no Keychain or Teleport access):
+
+   ```bash
+   CGO_ENABLED=0 go test -tags=integration -run TestSelectTeleportWithHomebrewFZF -v .
+   ```
+
+   Confirm the test passes rather than skips. It uses explicit trust of the
+   `admin` group and must select the fixture through the installed `fzf`.
 2. Build release binaries with a supported, patched Go toolchain. Check each
    binary's toolchain with `go version -m /path/to/binary`; changing `go.mod`
    or updating your local compiler does not repair existing binaries.

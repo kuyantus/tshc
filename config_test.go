@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -72,6 +74,43 @@ func TestEnsureConfigInstallsBundledConfig(t *testing.T) {
 	}
 	if output.Len() != 0 {
 		t.Errorf("second ensureConfig() output = %q, want none", output.String())
+	}
+}
+
+func TestTrustedExecutableGroupIDs(t *testing.T) {
+	t.Parallel()
+
+	group, err := user.LookupGroupId(strconv.Itoa(os.Getegid()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name      string
+		groups    []string
+		wantError bool
+	}{
+		{name: "no groups trusted by default"},
+		{name: "explicit group name", groups: []string{" " + group.Name + " "}},
+		{name: "unknown group", groups: []string{"tshc-test-nonexistent-group"}, wantError: true},
+		{name: "empty group", groups: []string{" "}, wantError: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := config{TrustedExecutableGroups: test.groups}
+			ids, err := cfg.trustedExecutableGroupIDs()
+			if (err != nil) != test.wantError {
+				t.Fatalf("trustedExecutableGroupIDs() error = %v, wantError = %v", err, test.wantError)
+			}
+			if err != nil {
+				return
+			}
+			if len(ids) != len(test.groups) {
+				t.Fatalf("trusted group IDs = %v, want %d groups", ids, len(test.groups))
+			}
+			if len(ids) == 1 && strconv.FormatUint(uint64(ids[0]), 10) != group.Gid {
+				t.Errorf("trusted group ID = %d, want %s", ids[0], group.Gid)
+			}
+		})
 	}
 }
 

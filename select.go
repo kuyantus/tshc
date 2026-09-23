@@ -33,15 +33,20 @@ func selectTeleport(
 	output io.Writer,
 	configuredFZFPath string,
 	teleports []teleport,
+	trustedGroupIDs ...uint32,
 ) (selection, error) {
-	fzfPath, err := resolveExecutable("fzf", configuredFZFPath)
+	fzfPath, err := resolveExecutable("fzf", configuredFZFPath, trustedGroupIDs...)
 	if err == nil {
 		return selectTeleportWithFZF(ctx, fzfPath, teleports)
 	}
-	if configuredFZFPath != "" || !errors.Is(err, exec.ErrNotFound) {
+	if configuredFZFPath != "" {
 		return selection{}, err
 	}
-	if _, err := fmt.Fprintln(output, "fzf not found; using basic selector."); err != nil {
+	notice := "fzf not found; using basic selector."
+	if !errors.Is(err, exec.ErrNotFound) {
+		notice = fmt.Sprintf("fzf unavailable (%v); using basic selector.", err)
+	}
+	if _, err := fmt.Fprintln(output, notice); err != nil {
 		return selection{}, fmt.Errorf("write selector notice: %w", err)
 	}
 	return selectTeleportInTerminal(ctx, input, output, teleports)
