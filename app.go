@@ -270,14 +270,16 @@ func validateExecutableParents(name, path string, trustedGroupIDs []uint32) erro
 			return fmt.Errorf("parent path %q for %s executable is not a directory", directory, name)
 		}
 		// Directory writers can replace a validated executable even when they
-		// cannot write to the executable itself. Trust groups only by explicit config.
+		// cannot write to the executable itself. Allow only configured groups or
+		// macOS administrators managing a standard Homebrew installation.
 		untrustedGroupWritable := info.Mode().Perm()&0o020 != 0
 		if untrustedGroupWritable {
 			groupID, err := fileGroupID(info)
 			if err != nil {
 				return fmt.Errorf("inspect group of parent directory %q: %w", directory, err)
 			}
-			untrustedGroupWritable = !slices.Contains(trustedGroupIDs, groupID)
+			untrustedGroupWritable = !slices.Contains(trustedGroupIDs, groupID) &&
+				!isTrustedHomebrewParent(path, directory, groupID)
 		}
 		if info.Mode().Perm()&0o002 != 0 || untrustedGroupWritable {
 			return fmt.Errorf(

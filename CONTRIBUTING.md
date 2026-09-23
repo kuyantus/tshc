@@ -34,8 +34,8 @@ updating those pins; Dependabot is configured to propose updates.
    CGO_ENABLED=0 go test -tags=integration -run TestSelectTeleportWithHomebrewFZF -v .
    ```
 
-   Confirm the test passes rather than skips. It uses explicit trust of the
-   `admin` group and must select the fixture through the installed `fzf`.
+   Confirm the test passes rather than skips. It must select the fixture
+   through the installed `fzf` with no extra trust configuration.
 2. Build release binaries with a supported, patched Go toolchain. Check each
    binary's toolchain with `go version -m /path/to/binary`; changing `go.mod`
    or updating your local compiler does not repair existing binaries.

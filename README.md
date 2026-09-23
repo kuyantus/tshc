@@ -27,20 +27,7 @@ brew install kuyantus/tap/tshc
 
 The Homebrew formula does not install Teleport: keep using the `tsh` version that works with your clusters. It does not install `fzf` either, since the built-in selector works without it. To update later, run `brew upgrade kuyantus/tap/tshc`.
 
-On macOS, Homebrew directories may be writable by the `admin` group. To use
-`fzf` or `tsh` from those directories, add this top-level setting to
-`~/.tshc/teleports.yaml` **only if you trust every member of that group**:
-
-```yaml
-trusted_executable_groups: [admin]
-```
-
-This explicitly allows group write permission on parent directories owned by
-you or root. Executable files must still be owned by you or root and must not
-be writable by a group or others; directories writable by everyone remain
-rejected. No groups are trusted by default. If an automatically discovered
-`fzf` fails validation, `tshc` explains why and uses the numbered selector.
-An invalid explicit `fzf_path` still produces an error.
+Homebrew-installed `fzf` is picked up automatically on macOS without extra settings.
 
 If you already have Go 1.26.8 or newer, you can also install with:
 
@@ -115,6 +102,22 @@ To stop using Keychain, set `keepass_password.source: prompt` in your config and
 ```bash
 tshc keychain delete
 ```
+
+## Executable validation
+
+For executables inside `/opt/homebrew/Cellar` or `/usr/local/Cellar` on macOS,
+`tshc` accepts `admin`-writable Homebrew parent directories. This trusts the
+Mac's administrators to manage that installation. Files and directories must
+still be owned by you or root, executable files must not be group- or
+world-writable, and world-writable directories are rejected.
+
+If an automatically discovered `fzf` fails validation, `tshc` explains why and
+uses the numbered selector. An invalid explicit `fzf_path` still produces an error.
+
+For a custom shared installation, the optional `trusted_executable_groups`
+list can name groups allowed to write executable parent directories. Enable
+it only for groups whose members you trust to replace those executables.
+Standard macOS Homebrew does not need this setting.
 
 ## License
 

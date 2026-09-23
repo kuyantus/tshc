@@ -3,9 +3,6 @@ keepass_password:
   source: keychain
 login_timeout: 5m
 
-# For Homebrew on macOS, enable only if you trust every member of admin:
-# trusted_executable_groups: [admin]
-
 teleports:
   - name: tport1
     proxy: tport1.example.com
