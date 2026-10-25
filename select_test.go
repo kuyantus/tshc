@@ -9,7 +9,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -239,6 +241,76 @@ func TestSelectTeleportWithFZFIncludesError(t *testing.T) {
 	}
 }
 
+func TestSelectTeleportWithFZFBoundsInheritedPipes(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name      string
+		cancel    bool
+		scriptEnd string
+		wantError error
+	}{
+		{name: "canceled selector", cancel: true, scriptEnd: "wait\n", wantError: context.Canceled},
+		{name: "exited selector", scriptEnd: "printf '1\\tfixture\\n'\n", wantError: exec.ErrWaitDelay},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			path := filepath.Join(t.TempDir(), "fzf")
+			script := "#!/bin/sh\nsleep 5 &\nprintf '%s\\n' \"$!\" > \"$0.pid\"\n" + test.scriptEnd
+			if err := writeTestExecutable(path, script); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() {
+				data, err := os.ReadFile(path + ".pid") // #nosec G304 -- path is an executable fixture under t.TempDir.
+				if errors.Is(err, os.ErrNotExist) {
+					return
+				}
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+				if err != nil || pid <= 0 {
+					t.Errorf("invalid fixture child PID %q", data)
+					return
+				}
+				if err := syscall.Kill(pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+					t.Errorf("stop fixture child: %v", err)
+				}
+			})
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if test.cancel {
+				go func() {
+					ticker := time.NewTicker(10 * time.Millisecond)
+					defer ticker.Stop()
+					for {
+						if _, err := os.Stat(path + ".pid"); err == nil {
+							cancel()
+							return
+						}
+						select {
+						case <-ctx.Done():
+							return
+						case <-ticker.C:
+						}
+					}
+				}()
+			}
+			started := time.Now()
+			_, err := selectTeleportWithFZF(ctx, path, []teleport{{Name: "fixture", Proxy: "fixture.invalid"}})
+			if !errors.Is(err, test.wantError) {
+				t.Errorf("selectTeleportWithFZF() error = %v, want %v", err, test.wantError)
+			}
+			if elapsed := time.Since(started); elapsed > 2*time.Second {
+				t.Errorf("selectTeleportWithFZF() took %v with an inherited output pipe", elapsed)
+			}
+		})
+	}
+}
+
 func TestParseSelection(t *testing.T) {
 	t.Parallel()
 
@@ -252,8 +324,16 @@ func TestParseSelection(t *testing.T) {
 	}{
 		{name: "all", choice: "0\t[ALL] Login to all clusters\n", count: 2, wantAll: true},
 		{name: "second", choice: "2\tproduction (example.com)\n", count: 2, wantIndex: 1},
+		{name: "CRLF line ending", choice: "2\tproduction (example.com)\r\n", count: 2, wantIndex: 1},
 		{name: "invalid format", choice: "production", count: 2, wantError: true},
 		{name: "out of range", choice: "3\tproduction", count: 2, wantError: true},
+		{name: "multiple selections", choice: "1\tproduction\n2\tstaging\n", count: 2, wantError: true},
+		{name: "query prefix", choice: "query\n1\tproduction\n", count: 2, wantError: true},
+		{name: "expected key prefix", choice: "enter\n1\tproduction\n", count: 2, wantError: true},
+		{name: "blank prefix", choice: "\n1\tproduction\n", count: 2, wantError: true},
+		{name: "extra blank line", choice: "1\tproduction\n\n", count: 2, wantError: true},
+		{name: "NUL record ending", choice: "1\tproduction\x00", count: 2, wantError: true},
+		{name: "NUL separated selections", choice: "1\tproduction\x002\tstaging\x00", count: 2, wantError: true},
 	}
 
 	for _, test := range tests {

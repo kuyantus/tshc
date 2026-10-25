@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -59,7 +60,12 @@ func selectTeleportWithFZF(ctx context.Context, fzfPath string, teleports []tele
 		fmt.Fprintf(&choices, "%d\t%s (%s)\n", i+1, tp.Name, tp.Proxy)
 	}
 
-	command := exec.CommandContext(ctx, fzfPath, "--delimiter=\t", "--with-nth=2..")
+	command := exec.CommandContext(ctx, fzfPath,
+		"--delimiter=\t", "--with-nth=2..",
+		"--no-multi", "--no-print-query", "--no-read0", "--no-print0", "--no-expect",
+	)
+	// User fzf hooks can leave descendants holding the captured output pipes.
+	command.WaitDelay = time.Second
 	command.Stdin = &choices
 	output, err := command.Output()
 	if err != nil {
@@ -173,6 +179,11 @@ func parseTerminalSelection(choice string, count int) (selection, error) {
 }
 
 func parseSelection(choice string, count int) (selection, error) {
+	choice = strings.TrimSuffix(choice, "\n")
+	choice = strings.TrimSuffix(choice, "\r")
+	if strings.ContainsAny(choice, "\x00\r\n") {
+		return selection{}, errors.New("fzf must return exactly one selection line")
+	}
 	indexText, _, found := strings.Cut(strings.TrimSpace(choice), "\t")
 	if !found {
 		return selection{}, fmt.Errorf("invalid fzf selection %q", choice)
