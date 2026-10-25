@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base32"
 	"errors"
 	"fmt"
 	"io"
 	"net/url"
-	"os"
 	"os/exec"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -171,7 +172,7 @@ func openKeePass(path string, password []byte) (_ *gokeepasslib.Database, return
 	database.Credentials = &gokeepasslib.DBCredentials{Passphrase: passwordHash[:]}
 	defer clearDatabaseCredentials(database)
 
-	file, err := os.Open(path) // #nosec G304 -- KeePass database path is explicitly supplied by the user config.
+	file, err := openRegularFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("open KeePass database %q: %w", path, err)
 	}
@@ -253,39 +254,63 @@ func parseTOTPSettings(raw string) (totpSettings, error) {
 	if parsed.Scheme != "otpauth" || parsed.Host != "totp" {
 		return totpSettings{}, errors.New("TOTP URI must use otpauth://totp")
 	}
-	query := parsed.Query()
-	algorithm := strings.ToUpper(query.Get("algorithm"))
-	if algorithm == "" {
-		algorithm = "SHA1"
-	}
-	switch algorithm {
-	case "SHA1", "SHA256", "SHA512":
-	default:
-		return totpSettings{}, errors.New("TOTP algorithm must be SHA1, SHA256, or SHA512")
-	}
-	digits := query.Get("digits")
-	if digits == "" {
-		digits = "6"
-	}
-	if digits != "6" && digits != "8" {
-		return totpSettings{}, errors.New("TOTP digits must be 6 or 8")
-	}
-
-	key, err := otp.NewKeyFromURL(raw)
+	query, err := url.ParseQuery(parsed.RawQuery)
 	if err != nil {
 		return totpSettings{}, errors.New("TOTP URI contains invalid parameters")
 	}
-	if key.Secret() == "" {
+	for _, name := range []string{"secret", "algorithm", "digits", "period", "encoder"} {
+		if len(query[name]) > 1 {
+			return totpSettings{}, errors.New("TOTP URI contains repeated parameters")
+		}
+	}
+	algorithm := otp.AlgorithmSHA1
+	if values, present := query["algorithm"]; present {
+		switch strings.ToUpper(values[0]) {
+		case "SHA1":
+		case "SHA256":
+			algorithm = otp.AlgorithmSHA256
+		case "SHA512":
+			algorithm = otp.AlgorithmSHA512
+		default:
+			return totpSettings{}, errors.New("TOTP algorithm must be SHA1, SHA256, or SHA512")
+		}
+	}
+	digits := otp.DigitsSix
+	if values, present := query["digits"]; present {
+		switch values[0] {
+		case "6":
+		case "8":
+			digits = otp.DigitsEight
+		default:
+			return totpSettings{}, errors.New("TOTP digits must be 6 or 8")
+		}
+	}
+	period := uint64(30)
+	if values, present := query["period"]; present {
+		period, err = strconv.ParseUint(values[0], 10, 64)
+		if err != nil || period == 0 || period > 300 {
+			return totpSettings{}, errors.New("TOTP period must be between 1 and 300 seconds")
+		}
+	}
+	if query.Get("encoder") != "" {
+		return totpSettings{}, errors.New("TOTP URI must use the standard numeric encoder")
+	}
+	secret := strings.ToUpper(strings.TrimSpace(query.Get("secret")))
+	if secret == "" {
 		return totpSettings{}, errors.New("TOTP URI has no secret")
 	}
-	if key.Period() == 0 || key.Period() > 300 || key.Period() > uint64(^uint(0)) {
-		return totpSettings{}, errors.New("TOTP period must be between 1 and 300 seconds")
+	if remainder := len(secret) % 8; remainder != 0 {
+		secret += strings.Repeat("=", 8-remainder)
+	}
+	decoded, decodeErr := base32.StdEncoding.DecodeString(secret)
+	clear(decoded)
+	if decodeErr != nil || len(decoded) == 0 {
+		return totpSettings{}, errors.New("TOTP secret must contain valid Base32 data")
 	}
 	return totpSettings{
-		secret:    []byte(key.Secret()),
-		period:    uint(key.Period()),
-		digits:    key.Digits(),
-		algorithm: key.Algorithm(),
-		encoder:   key.Encoder(),
+		secret:    []byte(secret),
+		period:    uint(period),
+		digits:    digits,
+		algorithm: algorithm,
 	}, nil
 }

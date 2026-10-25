@@ -92,11 +92,11 @@ func (r loginRunner) loginOne(ctx context.Context, job *loginJob) error {
 	closeErr := terminal.Close()
 	waitErr := command.Wait()
 
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return ctxErr
-	}
 	if exchangeErr != nil {
 		return exchangeErr
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
 	}
 	if restoreErr != nil && !errors.Is(restoreErr, os.ErrClosed) {
 		return fmt.Errorf("restore tsh terminal echo: %w", restoreErr)
@@ -390,6 +390,9 @@ func isTeleportStatusField(line []byte) bool {
 }
 
 func writeSecret(writer io.Writer, secret []byte) error {
+	if err := validateTerminalSecret(secret); err != nil {
+		return err
+	}
 	line := make([]byte, len(secret)+1)
 	copy(line, secret)
 	line[len(secret)] = '\n'
@@ -404,6 +407,15 @@ func writeSecret(writer io.Writer, secret []byte) error {
 			return io.ErrShortWrite
 		}
 		line = line[written:]
+	}
+	return nil
+}
+
+func validateTerminalSecret(secret []byte) error {
+	for _, character := range secret {
+		if character < 0x20 || character == 0x7f {
+			return errors.New("secret contains a terminal control character")
+		}
 	}
 	return nil
 }

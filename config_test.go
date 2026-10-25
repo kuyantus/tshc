@@ -114,6 +114,36 @@ func TestTrustedExecutableGroupIDs(t *testing.T) {
 	}
 }
 
+func TestConfigRejectsDisplayControls(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name, value string
+	}{
+		{"escape", "cluster\x1b[2J"},
+		{"NUL", "cluster\x00"},
+		{"DEL", "cluster\x7f"},
+		{"C1", "cluster\u009b2J"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			for _, field := range []string{"name", "proxy"} {
+				cfg := config{KeePassDB: "/fixture.kdbx", Teleports: []teleport{{ // #nosec G101 -- synthetic config, no credentials.
+					Name: "cluster", Proxy: "example.com", KeePassEntry: "entry",
+				}}}
+				if field == "name" {
+					cfg.Teleports[0].Name = test.value
+				} else {
+					cfg.Teleports[0].Proxy = test.value
+				}
+				if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "control characters") {
+					t.Errorf("validate(%s) error = %v, want terminal-control rejection", field, err)
+				}
+			}
+		})
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	t.Parallel()
 

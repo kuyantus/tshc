@@ -226,6 +226,97 @@ printf 'Login successful\n'
 	}
 }
 
+func TestLoginOnePreservesPromptErrors(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name    string
+		script  string
+		input   secretInput
+		wantErr string
+	}{
+		{
+			name: "invalid TOTP",
+			script: `printf 'Enter password: '
+IFS= read -r password
+printf 'Enter your OTP: '
+IFS= read -r code
+`,
+			input:   &staticSecretInput{values: [][]byte{[]byte("123abc")}},
+			wantErr: "TOTP must contain digits only",
+		},
+		{
+			name: "repeated password prompt",
+			script: `printf 'Enter password: '
+IFS= read -r password
+printf 'Enter password: '
+IFS= read -r password
+`,
+			wantErr: "password more than once",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			tshPath := filepath.Join(t.TempDir(), "tsh")
+			if err := writeTestExecutable(tshPath, "#!/bin/sh\n"+test.script); err != nil {
+				t.Fatal(err)
+			}
+			runner := loginRunner{
+				input:          test.input,
+				terminalOutput: io.Discard,
+				tshPath:        tshPath,
+				timeout:        5 * time.Second,
+			}
+			job := loginJob{password: []byte("password"), totpSource: totpSourcePrompt}
+			err := runner.loginOne(context.Background(), &job)
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("loginOne() error = %v, want %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestWriteSecretRejectsTerminalControlsBeforeWriting(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name    string
+		control byte
+	}{
+		{"newline", '\n'}, {"carriage return", '\r'}, {"NUL", 0},
+		{"interrupt", 3}, {"erase line", 21}, {"DEL", 127},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			secret := append([]byte("secret-prefix"), test.control)
+			secret = append(secret, []byte("secret-suffix")...)
+			var output bytes.Buffer
+			err := writeSecret(&output, secret)
+			if err == nil {
+				t.Fatal("writeSecret() succeeded for a terminal control character")
+			}
+			if output.Len() != 0 {
+				t.Fatal("writeSecret() wrote part of a rejected secret")
+			}
+			if strings.Contains(err.Error(), "secret-prefix") || strings.Contains(err.Error(), "secret-suffix") {
+				t.Fatal("writeSecret() error exposes the rejected secret")
+			}
+		})
+	}
+}
+
+func TestWriteSecretAcceptsPrintableUnicode(t *testing.T) {
+	t.Parallel()
+	secret := []byte("пароль-café-🔐")
+	var output bytes.Buffer
+	if err := writeSecret(&output, secret); err != nil {
+		t.Fatalf("writeSecret() error = %v", err)
+	}
+	if got := output.String(); got != string(secret)+"\n" {
+		t.Fatalf("writeSecret() output = %q, want the complete secret and newline", got)
+	}
+}
+
 func TestLoginJobsHidesRepeatedTeleportStatuses(t *testing.T) {
 	t.Parallel()
 

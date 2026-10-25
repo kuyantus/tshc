@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -152,7 +153,7 @@ func (c *config) validate() error {
 		if tp.Proxy == "" {
 			return fmt.Errorf("teleports[%d].proxy must not be empty", i)
 		}
-		if strings.ContainsAny(tp.Name, "\r\n\t") || strings.ContainsAny(tp.Proxy, "\r\n\t") {
+		if containsControlCharacter(tp.Name) || containsControlCharacter(tp.Proxy) {
 			return fmt.Errorf("teleports[%d] name and proxy must not contain control characters", i)
 		}
 		if tp.TOTPSource == "" {
@@ -178,6 +179,10 @@ func (c *config) validate() error {
 	}
 
 	return nil
+}
+
+func containsControlCharacter(value string) bool {
+	return strings.ContainsFunc(value, unicode.IsControl)
 }
 
 func loadConfig(path string) (_ config, returnErr error) {

@@ -143,9 +143,16 @@ func prepareLoginJob(database *gokeepasslib.Database, tp teleport) (loginJob, er
 	if username == "" {
 		return loginJob{}, errors.New("KeePass entry has no UserName")
 	}
+	if containsControlCharacter(username) {
+		return loginJob{}, errors.New("KeePass UserName must not contain control characters")
+	}
 	password := []byte(entry.GetPassword())
 	if len(password) == 0 {
 		return loginJob{}, errors.New("KeePass entry has no Password")
+	}
+	if err := validateTerminalSecret(password); err != nil {
+		clear(password)
+		return loginJob{}, fmt.Errorf("KeePass Password: %w", err)
 	}
 
 	job := loginJob{

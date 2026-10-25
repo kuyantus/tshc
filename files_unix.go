@@ -31,16 +31,21 @@ func effectiveUID() int {
 	return os.Geteuid()
 }
 
+func openRegularFile(path string) (*os.File, error) {
+	return openValidatedFile(path, unix.O_RDONLY, false)
+}
+
 func openRegularNoFollow(path string) (*os.File, error) {
-	return openNoFollow(path, unix.O_RDONLY, false)
+	return openValidatedFile(path, unix.O_RDONLY|unix.O_NOFOLLOW, false)
 }
 
 func openDirectoryNoFollow(path string) (*os.File, error) {
-	return openNoFollow(path, unix.O_RDONLY|unix.O_DIRECTORY, true)
+	return openValidatedFile(path, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW, true)
 }
 
-func openNoFollow(path string, flags int, wantDirectory bool) (*os.File, error) {
-	descriptor, err := unix.Open(path, flags|unix.O_CLOEXEC|unix.O_NOFOLLOW, 0)
+func openValidatedFile(path string, flags int, wantDirectory bool) (*os.File, error) {
+	// A FIFO must reach the type check without waiting for a writer.
+	descriptor, err := unix.Open(path, flags|unix.O_CLOEXEC|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +69,7 @@ func openNoFollow(path string, flags int, wantDirectory bool) (*os.File, error) 
 		if wantDirectory {
 			expected = "directory"
 		}
-		return nil, fmt.Errorf("must be a %s, not a symlink or special file", expected)
+		return nil, fmt.Errorf("must be a %s, not a special file", expected)
 	}
 	return file, nil
 }

@@ -208,6 +208,39 @@ func TestPrepareLoginJobTOTPSource(t *testing.T) {
 	}
 }
 
+func TestPrepareLoginJobRejectsTerminalControls(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name, field, value string
+	}{
+		{"password newline", "Password", "private\n123456"},
+		{"password erase", "Password", "private\x15value"},
+		{"username escape", "UserName", "alice\x1b[2J"},
+		{"username C1", "UserName", "alice\u009b2J"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			entry := keepassEntry("password")
+			for i := range entry.Values {
+				if entry.Values[i].Key == test.field {
+					entry.Values[i].Value.Content = test.value
+				}
+			}
+			database := gokeepasslib.NewDatabase()
+			database.Content.Root.Groups = []gokeepasslib.Group{{Entries: []gokeepasslib.Entry{entry}}}
+			job, err := prepareLoginJob(database, teleport{KeePassEntry: "production", TOTPSource: totpSourcePrompt})
+			defer job.clear()
+			if err == nil || !strings.Contains(err.Error(), "control character") {
+				t.Fatalf("prepareLoginJob() error = %v, want terminal-control rejection", err)
+			}
+			if strings.Contains(err.Error(), test.value) {
+				t.Fatal("validation error exposed a credential")
+			}
+		})
+	}
+}
+
 func TestResolveExecutableRejectsWritableParent(t *testing.T) {
 	t.Parallel()
 

@@ -65,12 +65,72 @@ func TestParseTOTPSettingsRejectsInvalidValues(t *testing.T) {
 		{name: "MD5", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&algorithm=MD5"},
 		{name: "unknown algorithm", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&algorithm=SHA3"},
 		{name: "unsupported digits", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&digits=7"},
+		{name: "empty digits", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&digits="},
+		{name: "empty algorithm", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&algorithm="},
+		{name: "empty period", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&period="},
+		{name: "invalid period", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&period=abc"},
+		{name: "negative period", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&period=-1"},
+		{name: "overflowing period", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&period=18446744073709551616"},
+		{name: "zero period", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&period=0"},
 		{name: "excessive period", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&period=301"},
+		{name: "malformed query escape", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&period=%zz"},
+		{name: "malformed query separator", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&period=45;digits=8"},
+		{name: "duplicate secret", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&secret=GEZDGNBVGY3TQOJQ"},
+		{name: "duplicate algorithm", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&algorithm=SHA1&algorithm=SHA256"},
+		{name: "duplicate digits", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&digits=6&digits=8"},
+		{name: "duplicate period", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&period=30&period=45"},
+		{name: "duplicate encoder", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&encoder=&encoder=steam"},
+		{name: "Steam encoder", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&encoder=steam"},
+		{name: "unknown encoder", raw: "otpauth://totp/example?secret=JBSWY3DPEHPK3PXP&encoder=unknown"},
+		{name: "invalid Base32", raw: "otpauth://totp/example?secret=not-base32!"},
+		{name: "blank secret", raw: "otpauth://totp/example?secret=%20%20"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			if _, err := parseTOTPSettings(test.raw); err == nil {
 				t.Fatalf("parseTOTPSettings(%q) succeeded, want error", test.raw)
+			}
+		})
+	}
+}
+
+func TestParseTOTPSettingsKnownCodes(t *testing.T) {
+	t.Parallel()
+
+	for _, test := range []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{
+			name: "RFC 6238 SHA1 vector",
+			raw:  "otpauth://totp/example?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&digits=8",
+			want: "94287082",
+		},
+		{
+			name: "default six digits and lowercase secret",
+			raw:  "otpauth://totp/example?secret=gezdgnbvgy3tqojqgezdgnbvgy3tqojq&algorithm=sha1",
+			want: "287082",
+		},
+		{
+			name: "padded secret with surrounding spaces",
+			raw:  "otpauth://totp/example?secret=%20MY%3D%3D%3D%3D%3D%3D%20&encoder=",
+			want: "300412",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			settings, err := parseTOTPSettings(test.raw)
+			if err != nil {
+				t.Fatalf("parseTOTPSettings() error = %v", err)
+			}
+			defer settings.clear()
+			got, err := settings.generate(time.Unix(59, 0))
+			if err != nil {
+				t.Fatalf("generate() error = %v", err)
+			}
+			if got != test.want {
+				t.Errorf("generate() = %q, want %q", got, test.want)
 			}
 		})
 	}
@@ -87,6 +147,27 @@ func TestParseTOTPSettingsDoesNotExposeSecret(t *testing.T) {
 	if strings.Contains(err.Error(), secret) {
 		t.Fatalf("error exposes TOTP secret: %v", err)
 	}
+}
+
+func FuzzParseTOTPSettings(f *testing.F) {
+	f.Add("otpauth://totp/Teleport?secret=JBSWY3DPEHPK3PXP")
+	f.Add("otpauth://totp/Teleport?secret=JBSWY3DPEHPK3PXP&period=45&digits=8&algorithm=SHA512")
+	f.Add("otpauth://totp/Teleport?secret=invalid&period=-1")
+	f.Add("")
+	f.Fuzz(func(t *testing.T, raw string) {
+		settings, err := parseTOTPSettings(raw)
+		if err != nil {
+			return
+		}
+		defer settings.clear()
+		code, err := settings.generate(time.Unix(1_700_000_000, 0))
+		if err != nil {
+			t.Fatalf("accepted settings cannot generate a TOTP: %v", err)
+		}
+		if len(code) != int(settings.digits) || strings.ContainsFunc(code, func(r rune) bool { return r < '0' || r > '9' }) {
+			t.Fatal("accepted settings generated an invalid numeric TOTP")
+		}
+	})
 }
 
 func TestClearDatabaseCredentials(t *testing.T) {
@@ -154,6 +235,38 @@ func TestOpenKeePassRejectsWrongPasswordWithoutLeakingIt(t *testing.T) {
 	if strings.Contains(err.Error(), wrongPassword) {
 		t.Fatalf("openKeePass() error exposes the password: %v", err)
 	}
+}
+
+func TestOpenKeePassPreservesSymlinkSupport(t *testing.T) {
+	t.Parallel()
+
+	directory := t.TempDir()
+	path := filepath.Join(directory, "passwords.kdbx")
+	writeTestKeePassDatabase(t, path, "dummy-master", keepassEntry("dummy-password"))
+	link := filepath.Join(directory, "passwords-link.kdbx")
+	if err := os.Symlink(path, link); err != nil {
+		t.Fatal(err)
+	}
+	database, err := openKeePass(link, []byte("dummy-master"))
+	if err != nil {
+		t.Fatalf("openKeePass(symlink) error = %v", err)
+	}
+	entry, err := findEntry(database, "production")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := entry.GetPassword(); got != "dummy-password" {
+		t.Errorf("password = %q, want fixture password", got)
+	}
+}
+
+func TestOpenKeePassRejectsFIFO(t *testing.T) {
+	t.Parallel()
+
+	assertFIFORejected(t, func(path string) error {
+		_, err := openKeePass(path, []byte("dummy-master"))
+		return err
+	})
 }
 
 func TestParseKeychainPassword(t *testing.T) {
