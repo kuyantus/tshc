@@ -1,6 +1,6 @@
 # Contributing
 
-Use Go 1.26.10 or newer, with the latest security fixes for your Go release.
+Use Go 1.27.3 or newer, with the latest security fixes for your Go release.
 From a checkout, run:
 
 ```bash

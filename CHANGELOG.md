@@ -9,7 +9,7 @@
 - Reject FIFO and other special files immediately when opening configuration or KeePass databases. KeePass database symlinks remain supported.
 - Bound waiting for inherited `fzf` output pipes after cancellation or exit. Enforce single-selection output despite conflicting `FZF_DEFAULT_OPTS`; reject ambiguous responses.
 - Update `gokeepasslib` to 3.7.1, including fixes for panics on truncated databases, `x/crypto` to 0.58.0, and `x/sys` to 0.49.0.
-- Require Go 1.26.10 or newer for source builds. Refresh gosec, govulncheck, and golangci-lint versions in CI.
+- Require Go 1.27.3 or newer for source builds. Refresh gosec, govulncheck, and golangci-lint versions in CI.
 
 Earlier release notes are available in [GitHub Releases].
 

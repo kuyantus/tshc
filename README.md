@@ -13,7 +13,7 @@ I built `tshc` because logging in to several Teleport clusters one by one got ol
 
 - `tsh` installed (in `PATH`, unless you set `tsh_path`)
 - A KeePass `.kdbx` database with a `UserName` and `Password` in each Teleport entry
-- Go 1.26.10 or newer if you use `go install` or build manually
+- Go 1.27.3 or newer if you use `go install` or build manually
 
 [`fzf`](https://github.com/junegunn/fzf) is optional. With it, you get a searchable cluster list. Without it, `tshc` shows a numbered list in the terminal.
 
@@ -29,7 +29,7 @@ The Homebrew formula does not install Teleport: keep using the `tsh` version tha
 
 Homebrew-installed `fzf` is picked up automatically on macOS without extra settings.
 
-If you already have Go 1.26.10 or newer, you can also install with:
+If you already have Go 1.27.3 or newer, you can also install with:
 
 ```bash
 go install github.com/kuyantus/tshc@latest
