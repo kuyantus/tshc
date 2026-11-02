@@ -23,6 +23,10 @@ Linux, tests the minimum Go version and the current stable version, and pins
 third-party actions to commit SHAs. Keep the adjacent version comments when
 updating those pins; Dependabot is configured to propose updates.
 
+Write code comments in English. Explain non-obvious decisions, security
+constraints, resource ownership, and compatibility requirements. Use Go doc
+comments for exported symbols; avoid comments that only restate the code.
+
 ## Release procedure
 
 1. Run the checks above on the release commit. Review the CI results for both

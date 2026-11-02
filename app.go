@@ -120,6 +120,8 @@ func (a application) run(ctx context.Context) error {
 	return errors.Join(prepareErr, loginErr)
 }
 
+// prepareLoginJobs copies credentials so the database can be relocked before login.
+// Successful jobs may accompany an error; callers must clear every returned job.
 func prepareLoginJobs(database *gokeepasslib.Database, teleports []teleport) ([]loginJob, error) {
 	jobs := make([]loginJob, 0, len(teleports))
 	var errs []error
@@ -184,6 +186,8 @@ type loginRunner struct {
 	login          func(context.Context, *loginJob) error
 }
 
+// loginJobs runs jobs in config order and clears their secrets on every exit,
+// including jobs skipped after cancellation.
 func (r loginRunner) loginJobs(ctx context.Context, jobs []loginJob, loginAll bool) error {
 	r.compactStatus = loginAll
 	defer func() {

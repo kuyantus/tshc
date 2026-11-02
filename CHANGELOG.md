@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.1.6] — 2026-11-02
+
+- Preserve cluster selection when `FZF_DEFAULT_OPTS` or `FZF_DEFAULT_OPTS_FILE` sets `--accept-nth`. Keep compatibility with fzf older than 0.60 without an extra process on newer versions.
+- Clear the duplicate decrypted KeePass XML payload after loading the database. Parsed entries remain available for login preparation; the raw payload is no longer retained for the login batch.
+- Rewrite the README's first-run steps with a cross-platform example, optional Keychain setup, and per-cluster timeout behavior. Document credential ownership and cleanup in English code comments.
+
 ## [0.1.5] — 2026-10-25
 
 - Reject malformed or repeated TOTP parameters and invalid Base32 secrets before starting a login. Explicit invalid periods no longer silently become 30 seconds; Steam codes are rejected.
@@ -13,5 +19,6 @@
 
 Earlier release notes are available in [GitHub Releases].
 
+[0.1.6]: https://github.com/kuyantus/tshc/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/kuyantus/tshc/compare/v0.1.4...v0.1.5
 [GitHub Releases]: https://github.com/kuyantus/tshc/releases

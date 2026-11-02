@@ -39,6 +39,7 @@ func (r loginRunner) loginOne(ctx context.Context, job *loginJob) error {
 		if command.Process == nil {
 			return nil
 		}
+		// pty.Start makes tsh the session leader; kill the group to include its children.
 		err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
 		if errors.Is(err, syscall.ESRCH) {
 			return os.ErrProcessDone
@@ -154,6 +155,8 @@ const (
 	promptTOTP
 )
 
+// exchangePrompts handles prompts split across reads and answers each kind once.
+// A successful secret callback transfers ownership of its result for clearing.
 func exchangePrompts(
 	ctx context.Context,
 	terminal io.ReadWriter,
