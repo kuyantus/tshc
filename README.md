@@ -5,7 +5,7 @@
 
 I built `tshc` because logging in to several Teleport clusters one by one got old. It reads local-login credentials from KeePass, runs `tsh login`, and lets you pick one cluster or sign in to all of them. TOTP can come from KeePass or from an authenticator on your phone.
 
-![Cluster selector in iTerm2](tshc.png)
+![Cluster selector in iTerm2](docs/images/cluster-selector.png)
 
 `tshc` is for Teleport's password-and-OTP login flow. It does not automate SSO or browser-based login.
 
