@@ -24,6 +24,10 @@ cluster index remains unambiguous. After `fzf` exits or is canceled, waiting
 for output pipes inherited by child processes is limited to one second.
 User-defined hook processes may continue running independently.
 
+On `fzf` 0.60 and later, `tshc` overrides `--accept-nth` to retain the cluster
+index even when user defaults select other output fields. Older versions
+are retried once without this option when they report it as unknown.
+
 ## Executable validation
 
 On macOS, `tshc` accepts parent directories writable by the `admin` group,

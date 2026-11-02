@@ -241,6 +241,74 @@ func TestSelectTeleportWithFZFIncludesError(t *testing.T) {
 	}
 }
 
+func TestSelectTeleportWithFZFSupportsLegacyOptions(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "fzf")
+	script := `#!/bin/sh
+printf 'run\n' >> "$0.calls"
+for arg do
+  if [ "$arg" = '--accept-nth=..' ]; then
+    while IFS= read -r ignored; do :; done
+    printf 'unknown option: --accept-nth=..\n' >&2
+    exit 2
+  fi
+done
+IFS= read -r all
+IFS= read -r first
+[ -n "$all" ] && [ -n "$first" ] || exit 23
+printf '%s\n' "$first"
+`
+	if err := writeTestExecutable(path, script); err != nil {
+		t.Fatal(err)
+	}
+	got, err := selectTeleportWithFZF(t.Context(), path, []teleport{{Name: "fixture", Proxy: "fixture.invalid"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.all || got.index != 0 {
+		t.Fatalf("selection = %+v, want first cluster", got)
+	}
+	calls, err := os.ReadFile(path + ".calls") // #nosec G304 -- path is an executable fixture under t.TempDir.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(calls) != "run\nrun\n" {
+		t.Fatalf("legacy selector calls = %q, want one compatibility retry", calls)
+	}
+}
+
+func TestSelectTeleportWithFZFDoesNotRetryOtherFailures(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, message string
+		status        int
+	}{
+		{"unknown user option", "unknown option: --user-option", 2},
+		{"wrong exit status", "unknown option: --accept-nth=..", 1},
+		{"runtime failure", "terminal is unavailable", 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "fzf")
+			script := fmt.Sprintf("#!/bin/sh\nprintf 'run\\n' >> \"$0.calls\"\nprintf '%%s\\n' '%s' >&2\nexit %d\n", test.message, test.status)
+			if err := writeTestExecutable(path, script); err != nil {
+				t.Fatal(err)
+			}
+			_, err := selectTeleportWithFZF(t.Context(), path, []teleport{{Name: "fixture"}})
+			if err == nil || !strings.Contains(err.Error(), test.message) {
+				t.Fatalf("selector error = %v, want %q", err, test.message)
+			}
+			calls, err := os.ReadFile(path + ".calls") // #nosec G304 -- path is an executable fixture under t.TempDir.
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(calls) != "run\n" {
+				t.Fatalf("selector calls = %q, want no retry", calls)
+			}
+		})
+	}
+}
+
 func TestSelectTeleportWithFZFBoundsInheritedPipes(t *testing.T) {
 	t.Parallel()
 

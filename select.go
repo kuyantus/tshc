@@ -53,6 +53,7 @@ func selectTeleport(
 	return selectTeleportInTerminal(ctx, input, output, teleports)
 }
 
+// selectTeleportWithFZF requires an executable path validated by selectTeleport.
 func selectTeleportWithFZF(ctx context.Context, fzfPath string, teleports []teleport) (selection, error) {
 	var choices bytes.Buffer
 	fmt.Fprintf(&choices, "0\t%s\n", loginAllLabel)
@@ -60,14 +61,30 @@ func selectTeleportWithFZF(ctx context.Context, fzfPath string, teleports []tele
 		fmt.Fprintf(&choices, "%d\t%s (%s)\n", i+1, tp.Name, tp.Proxy)
 	}
 
-	command := exec.CommandContext(ctx, fzfPath,
+	// Keep the numeric prefix in accepted output while hiding it in the UI.
+	args := []string{
 		"--delimiter=\t", "--with-nth=2..",
 		"--no-multi", "--no-print-query", "--no-read0", "--no-print0", "--no-expect",
-	)
-	// User fzf hooks can leave descendants holding the captured output pipes.
-	command.WaitDelay = time.Second
-	command.Stdin = &choices
-	output, err := command.Output()
+		"--accept-nth=..",
+	}
+	var output []byte
+	var err error
+	for attempt := range 2 {
+		command := exec.CommandContext(ctx, fzfPath, args...) // #nosec G702 -- validated executable; no shell.
+		// User fzf hooks can leave descendants holding the captured output pipes.
+		command.WaitDelay = time.Second
+		command.Stdin = bytes.NewReader(choices.Bytes())
+		output, err = command.Output()
+		exitError, exited := errors.AsType[*exec.ExitError](err)
+		unsupportedOption := exited && exitError.ExitCode() == 2 &&
+			strings.TrimSpace(string(exitError.Stderr)) == "unknown option: --accept-nth=.."
+		if attempt == 0 && ctx.Err() == nil && unsupportedOption {
+			// fzf before 0.60 lacks --accept-nth and already returns the complete row.
+			args = args[:len(args)-1]
+			continue
+		}
+		break
+	}
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return selection{}, ctxErr
