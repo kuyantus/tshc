@@ -21,7 +21,9 @@ func TestOpenKeePassRejectsTruncatedDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, size := range []int{0, 1, 12, encoded.Len() / 2, encoded.Len() - 1, encoded.Len() - 16} {
+	// One full AES block can contain only padding, leaving all content intact.
+	// Cut deeper for the block-aligned case so hashed data is actually missing.
+	for _, size := range []int{0, 1, 12, encoded.Len() / 2, encoded.Len() - 1, encoded.Len() - 64} {
 		t.Run(fmt.Sprintf("%d_bytes", size), func(t *testing.T) {
 			t.Parallel()
 			path := filepath.Join(t.TempDir(), "truncated.kdbx")
