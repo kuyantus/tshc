@@ -5,7 +5,7 @@
 
 I built `tshc` because logging in to several Teleport clusters one by one got old. It reads local-login credentials from KeePass, runs `tsh login`, and lets you pick one cluster or sign in to all of them. TOTP can come from KeePass or from an authenticator on your phone.
 
-![Cluster selector](tshc.png)
+![Cluster selector in iTerm2](tshc.png)
 
 `tshc` is for Teleport's password-and-OTP login flow. It does not automate SSO or browser-based login.
 
@@ -66,6 +66,10 @@ The formula installs `tshc` without Teleport or `fzf`. Keep using the `tsh` vers
    ```
 
    Choose a cluster, enter the KeePass master password, and enter the code from your authenticator when asked. This example works on either operating system. Select `[ALL]` to log in to both clusters in config order, with one master-password prompt for the batch.
+
+![Login to all configured clusters in iTerm2](docs/images/batch-login.png)
+
+The screenshots use demo clusters and credentials, captured in iTerm2 with JetBrains Mono. The batch example generates TOTP codes from KeePass.
 
 ## TOTP and other options
 
