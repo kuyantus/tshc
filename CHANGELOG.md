@@ -5,7 +5,7 @@
 - Preserve cluster selection when `FZF_DEFAULT_OPTS` or `FZF_DEFAULT_OPTS_FILE` sets `--accept-nth`. Keep compatibility with fzf older than 0.60 without an extra process on newer versions.
 - Clear the duplicate decrypted KeePass XML payload after loading the database. Parsed entries remain available for login preparation; the raw payload is no longer retained for the login batch.
 - Update the YAML library to 3.0.6, which preserves a literal `<<` map key when encoding YAML.
-- Rewrite the README's first-run steps with a cross-platform example, optional Keychain setup, per-cluster timeout behavior, and new iTerm2 screenshots with demo data. Document credential ownership and cleanup in English code comments.
+- Rewrite the README's first-run steps with a cross-platform example, optional Keychain setup, per-cluster timeout behavior, and new iTerm2 screenshots with demo data. Document credential ownership and cleanup in code comments.
 
 ## [0.1.5] — 2026-10-25
 
