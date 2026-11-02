@@ -164,6 +164,8 @@ func parseKeychainPassword(output []byte) ([]byte, error) {
 	return password, nil
 }
 
+// openKeePass returns a database with protected entries unlocked for copying.
+// Callers must relock the entries after preparing login jobs.
 func openKeePass(path string, password []byte) (_ *gokeepasslib.Database, returnErr error) {
 	database := gokeepasslib.NewDatabase()
 	// DBCredentials expects the SHA-256 hash, as produced by
@@ -171,6 +173,13 @@ func openKeePass(path string, password []byte) (_ *gokeepasslib.Database, return
 	passwordHash := sha256.Sum256(password)
 	database.Credentials = &gokeepasslib.DBCredentials{Passphrase: passwordHash[:]}
 	defer clearDatabaseCredentials(database)
+	defer func() {
+		if database.Content != nil {
+			// Parsed entries own their data; discard the duplicate decrypted payload.
+			clear(database.Content.RawData)
+			database.Content.RawData = nil
+		}
+	}()
 
 	file, err := openRegularFile(path)
 	if err != nil {

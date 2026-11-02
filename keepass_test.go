@@ -14,6 +14,7 @@ import (
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 	"github.com/tobischo/gokeepasslib/v3"
+	"github.com/tobischo/gokeepasslib/v3/wrappers"
 )
 
 func TestParseTOTPSettings(t *testing.T) {
@@ -234,6 +235,55 @@ func TestOpenKeePassRejectsWrongPasswordWithoutLeakingIt(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), wrongPassword) {
 		t.Fatalf("openKeePass() error exposes the password: %v", err)
+	}
+}
+
+func TestOpenKeePassDiscardsDecryptedPayload(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name   string
+		option gokeepasslib.DatabaseOption
+	}{
+		{"KDBX3", gokeepasslib.WithDatabaseKDBXVersion3()},
+		{"KDBX4", gokeepasslib.WithDatabaseKDBXVersion40()},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			path := filepath.Join(t.TempDir(), "fixture.kdbx")
+			database := gokeepasslib.NewDatabase(test.option)
+			database.Credentials = gokeepasslib.NewPasswordCredentials("fixture-master")
+			entry := keepassEntry("fixture-password")
+			entry.Values[2].Value.Protected = wrappers.NewBoolWrapper(true)
+			database.Content.Root.Groups = []gokeepasslib.Group{{Entries: []gokeepasslib.Entry{entry}}}
+			if err := database.LockProtectedEntries(); err != nil {
+				t.Fatal(err)
+			}
+			var encoded bytes.Buffer
+			if err := gokeepasslib.NewEncoder(&encoded).Encode(database); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, encoded.Bytes(), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			opened, err := openKeePass(path, []byte("fixture-master"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(opened.Content.RawData) != 0 {
+				t.Errorf("retained %d bytes of decrypted database payload", len(opened.Content.RawData))
+			}
+			job, err := prepareLoginJob(opened, teleport{KeePassEntry: "production", TOTPSource: totpSourcePrompt})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer job.clear()
+			if string(job.password) != "fixture-password" {
+				t.Fatal("discarding the raw payload broke the protected password")
+			}
+			if err := opened.LockProtectedEntries(); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
