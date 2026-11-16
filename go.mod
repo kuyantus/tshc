@@ -7,7 +7,7 @@ require (
 	github.com/pquerna/otp v1.5.0
 	github.com/tobischo/gokeepasslib/v3 v3.7.1
 	go.yaml.in/yaml/v3 v3.0.6
-	golang.org/x/sys v0.49.0
+	golang.org/x/sys v0.50.0
 )
 
 require (
